@@ -159,7 +159,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
         when (mode) {
             CalendarMode.DAY -> DayTimeline(
                 tasks = dayTasks,
-                actuals = sessionsToBlocks(daySessions, System.currentTimeMillis()),
+                actuals = sessionsToBlocks(daySessions, dayTasks, System.currentTimeMillis()),
                 onTaskClick = { editing = it },
                 modifier = Modifier.weight(1f),
             )

@@ -1,0 +1,326 @@
+package com.wsy.ci.feature.today
+
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import com.wsy.ci.core.data.Settlement
+import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.db.TaskStatus
+import com.wsy.ci.core.designsystem.CiElevation
+import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSizes
+import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.tabularNums
+import com.wsy.ci.core.economy.FocusOutcome
+import com.wsy.ci.core.util.TimeFormat
+
+/** 表单/确认类对话框外壳：560dp 宽、圆角 28、surfaceContainerHigh、内边距 24。 */
+@Composable
+private fun CiFormDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    confirmLabel: String?,
+    onConfirm: (() -> Unit)?,
+    dismissLabel: String = "取消",
+    content: @Composable () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.width(CiSizes.dialogFormWidth),
+            shape = CiShapes.dialog,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = CiElevation.dialog,
+        ) {
+            Column(
+                modifier = Modifier.padding(CiSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
+            ) {
+                Text(text = title, style = MaterialTheme.typography.titleLarge)
+                content()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = CiSpacing.xxs + 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm, Alignment.End),
+                ) {
+                    TextButton(onClick = onDismiss) { Text(dismissLabel) }
+                    if (confirmLabel != null && onConfirm != null) {
+                        Button(onClick = onConfirm, shape = CiShapes.pill) { Text(confirmLabel) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 庆祝类对话框外壳：480dp 宽、圆角 28，带放射光环装饰。
+ * [accent] 决定光环与主数值的强调色（入账用电青、升级用金铜）。
+ */
+@Composable
+private fun CiCelebrateDialog(
+    accent: Color,
+    onDismiss: () -> Unit,
+    actionLabel: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.width(CiSizes.dialogCelebrateWidth),
+            shape = CiShapes.dialog,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = CiElevation.celebrate,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                RadiatingRings(color = accent)
+                Column(
+                    modifier = Modifier.padding(CiSpacing.xl),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    content()
+                    Button(
+                        onClick = onDismiss,
+                        shape = CiShapes.pill,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accent,
+                            contentColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        modifier = Modifier.padding(top = 10.dp),
+                    ) {
+                        Text(actionLabel, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 两圈交错扩散的光环，近似设计稿里 `ciRing` 关键帧动画。 */
+@Composable
+private fun RadiatingRings(color: Color) {
+    val transition = rememberInfiniteTransition(label = "ring")
+    listOf(0, RING_STAGGER_MILLIS).forEach { delayMillis ->
+        val progress by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(RING_DURATION_MILLIS, delayMillis, LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "ring$delayMillis",
+        )
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .scale(RING_START_SCALE + (RING_END_SCALE - RING_START_SCALE) * progress)
+                .alpha(RING_START_ALPHA * (1f - progress))
+                .border(width = 2.dp, color = color, shape = CiShapes.pill)
+        )
+    }
+}
+
+private const val RING_DURATION_MILLIS = 1600
+private const val RING_STAGGER_MILLIS = 500
+private const val RING_START_SCALE = 0.6f
+private const val RING_END_SCALE = 1.9f
+private const val RING_START_ALPHA = 0.65f
+
+@Composable
+internal fun TaskDetailDialog(
+    task: TaskEntity,
+    isTimerRunning: Boolean,
+    onStart: () -> Unit,
+    onEdit: () -> Unit,
+    onSkip: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val canStart = task.status == TaskStatus.PLANNED && !isTimerRunning
+    CiFormDialog(
+        title = task.title,
+        onDismiss = onDismiss,
+        confirmLabel = if (canStart) "▶ 开始专注" else null,
+        onConfirm = if (canStart) onStart else null,
+        dismissLabel = "关闭",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+            Text(
+                text = "${TimeFormat.minuteOfDay(task.startMinute)} – " +
+                    TimeFormat.minuteOfDay(task.endMinute),
+                style = MaterialTheme.typography.bodyLarge.tabularNums(),
+            )
+            Text(
+                text = "难度：${task.difficulty.label} ×${task.difficulty.factor}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (task.note.isNotBlank()) {
+                Text(task.note, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (isTimerRunning && task.status == TaskStatus.PLANNED) {
+                Text(
+                    text = "已有进行中的专注，结束后才能开始新任务",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = CiSpacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                TextButton(onClick = onEdit) { Text("编辑") }
+                if (task.status == TaskStatus.PLANNED) {
+                    TextButton(onClick = onSkip) { Text("跳过") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun StopFocusDialog(onPick: (FocusOutcome) -> Unit, onDismiss: () -> Unit) {
+    CiFormDialog(
+        title = "这次专注的结果？",
+        onDismiss = onDismiss,
+        confirmLabel = null,
+        onConfirm = null,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            FocusOutcome.entries.forEach { outcome ->
+                Button(
+                    onClick = { onPick(outcome) },
+                    shape = CiShapes.pill,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("${outcome.label}（系数 ×${outcome.factor}）")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
+    val isLevelUp = settlement.newLevel != null
+    val accent = if (isLevelUp) {
+        MaterialTheme.colorScheme.secondary
+    } else {
+        MaterialTheme.colorScheme.tertiary
+    }
+    CiCelebrateDialog(
+        accent = accent,
+        onDismiss = onDismiss,
+        actionLabel = if (isLevelUp) "继续" else "太棒了",
+    ) {
+        Text(
+            text = if (isLevelUp) "领域升级" else "专注入账",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "🪙 +${settlement.rewardCi} CI",
+            style = MaterialTheme.typography.displaySmall.tabularNums(),
+            color = accent,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = "专注 ${TimeFormat.duration(settlement.minutes)}" +
+                if (settlement.expGained > 0) " · 经验 +${settlement.expGained}" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        settlement.newLevel?.let { level ->
+            Text(
+                text = "🎉 头衔升至 Lv.$level，奖励 +${settlement.levelUpRewardCi} CI",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** 一句话调整相关的三个提示弹窗。 */
+@Composable
+internal fun NlDialogs(state: TodayViewModel.NlState, viewModel: TodayViewModel) {
+    when (state) {
+        is TodayViewModel.NlState.BlockerPreview -> AlertDialog(
+            onDismissRequest = viewModel::dismissNl,
+            shape = CiShapes.dialog,
+            title = { Text("解析出以下占位时段") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                    state.blockers.forEach {
+                        Text("· ${it.date} ${it.start}–${it.end}  ${it.title}")
+                    }
+                    Text(
+                        text = "确认后这些时段将不可安排任务，并自动重排受影响的日程",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmBlockers(state.blockers) },
+                    shape = CiShapes.pill,
+                ) { Text("确认并重排") }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissNl) { Text("取消") } },
+        )
+        is TodayViewModel.NlState.Diff -> AlertDialog(
+            onDismissRequest = {},
+            shape = CiShapes.dialog,
+            title = { Text("重排预览") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                    state.lines.forEach { Text("· $it") }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.applyDiff(state) }, shape = CiShapes.pill) {
+                    Text("应用")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelDiff(state) }) { Text("放弃（撤销占位）") }
+            },
+        )
+        is TodayViewModel.NlState.Error -> AlertDialog(
+            onDismissRequest = viewModel::dismissNl,
+            shape = CiShapes.dialog,
+            title = { Text("解析失败") },
+            text = { Text(state.message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissNl) { Text("知道了") } },
+        )
+        else -> Unit
+    }
+}
