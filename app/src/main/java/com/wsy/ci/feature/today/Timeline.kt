@@ -20,6 +20,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -96,13 +100,17 @@ fun DayTimeline(
     fun heightOf(start: Int, end: Int): Dp =
         (yOf(end) - yOf(start) - BLOCK_GAP).coerceAtLeast(MIN_BLOCK_HEIGHT)
 
-    // 打开时把当前时刻滚到视野上沿偏下一点，避免一进来只看到清晨的空白
+    // 首次测量出滚动范围后，把当前时刻滚到视野上沿偏下一点，避免一进来只看到清晨的空白。
+    // 只滚一次，之后不再和用户的手动滚动抢方向。
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
-    LaunchedEffect(nowMinute) {
+    var didAutoScroll by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollState.maxValue, nowMinute) {
         val target = nowMinute ?: return@LaunchedEffect
+        if (didAutoScroll || scrollState.maxValue == 0) return@LaunchedEffect
         val offsetPx = with(density) { (yOf(target) - SCROLL_LEAD_IN).toPx() }
-        scrollState.animateScrollTo(offsetPx.toInt().coerceAtLeast(0))
+        scrollState.animateScrollTo(offsetPx.toInt().coerceIn(0, scrollState.maxValue))
+        didAutoScroll = true
     }
 
     Column(

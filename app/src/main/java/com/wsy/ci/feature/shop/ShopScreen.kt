@@ -76,8 +76,8 @@ private enum class ShopTab(val label: String) {
     LEDGER("流水"),
 }
 
-/** 精选卡宽度：内容区 1344dp 下一行四张。 */
-private val PICK_CARD_WIDTH = 318.dp
+/** 精选卡：一行四张，宽度按行等分。 */
+private const val PICK_CARDS_PER_ROW = 4
 
 /** 品质的展示雅称，纯展示层映射，不动 [Rarity] 枚举本身。 */
 private val Rarity.displayLabel: String
@@ -275,8 +275,11 @@ private fun DailyPicksWall(
         modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
+        maxItemsInEachRow = PICK_CARDS_PER_ROW,
     ) {
-        picks.forEach { (pick, item) -> PickCard(pick, item, onBuy) }
+        picks.forEach { (pick, item) ->
+            PickCard(pick, item, onBuy, modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -285,10 +288,11 @@ private fun PickCard(
     pick: DailyPickEntity,
     item: ShopItemEntity,
     onBuy: (DailyPickEntity, ShopItemEntity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val quality = CiTheme.colors.quality(item.rarity)
     Card(
-        modifier = Modifier.width(PICK_CARD_WIDTH),
+        modifier = modifier,
         shape = CiShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,

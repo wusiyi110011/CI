@@ -56,12 +56,12 @@ private enum class QuestTab(val label: String) {
     DOMAIN("领域头衔"),
 }
 
-/** 主线卡宽度：内容区 1344dp 下正好两张一行。 */
-private val MAIN_CARD_WIDTH = 660.dp
+/** 主线卡：一行两张（宽度按行等分，实机内容区比设计画布更宽）。 */
+private const val MAIN_CARDS_PER_ROW = 2
 private val MAIN_CARD_HEIGHT = 180.dp
 
-/** 支线卡宽度：一行四张。 */
-private val SIDE_CARD_WIDTH = 320.dp
+/** 支线卡：一行四张。 */
+private const val SIDE_CARDS_PER_ROW = 4
 private val SIDE_CARD_HEIGHT = 132.dp
 
 /** 截止日临近告警阈值。 */
@@ -216,9 +216,16 @@ private fun QuestBoard(
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
+                    maxItemsInEachRow = MAIN_CARDS_PER_ROW,
                 ) {
                     mains.forEach { quest ->
-                        MainQuestCard(quest, onEdit, onComplete, onArchive)
+                        MainQuestCard(
+                            quest = quest,
+                            onEdit = onEdit,
+                            onComplete = onComplete,
+                            onArchive = onArchive,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
@@ -229,9 +236,16 @@ private fun QuestBoard(
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
+                    maxItemsInEachRow = SIDE_CARDS_PER_ROW,
                 ) {
                     sides.forEach { quest ->
-                        SideQuestCard(quest, onEdit, onComplete, onArchive)
+                        SideQuestCard(
+                            quest = quest,
+                            onEdit = onEdit,
+                            onComplete = onComplete,
+                            onArchive = onArchive,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
@@ -255,13 +269,14 @@ private fun MainQuestCard(
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val today = LocalDate.now().toEpochDay()
     val daysLeft = quest.deadlineEpochDay?.minus(today)
     val progress = timeProgress(quest, today)
 
     CiPanelCard(
-        modifier = Modifier.width(MAIN_CARD_WIDTH).height(MAIN_CARD_HEIGHT),
+        modifier = modifier.height(MAIN_CARD_HEIGHT),
         contentPadding = 20.dp,
     ) {
         Column(
@@ -359,9 +374,10 @@ private fun SideQuestCard(
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     CiPanelCard(
-        modifier = Modifier.width(SIDE_CARD_WIDTH).height(SIDE_CARD_HEIGHT),
+        modifier = modifier.height(SIDE_CARD_HEIGHT),
         contentPadding = CiSpacing.md,
     ) {
         Column(
