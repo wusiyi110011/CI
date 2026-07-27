@@ -3,6 +3,8 @@ package com.wsy.ci
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
@@ -40,13 +43,16 @@ import com.wsy.ci.feature.shop.ShopScreen
 import com.wsy.ci.feature.stats.StatsScreen
 import com.wsy.ci.feature.today.TodayScreen
 
-private enum class Destination(val label: String, val glyph: String) {
-    TODAY("今日", "⏱"),
-    CALENDAR("日程", "📅"),
-    QUEST("任务", "🗡"),
-    SHOP("商城", "🛍"),
-    STATS("复盘", "📊"),
-    SETTINGS("设置", "⚙️"),
+private enum class Destination(
+    val label: String,
+    @param:DrawableRes val icon: Int,
+) {
+    TODAY("今日", R.drawable.ic_nav_today),
+    CALENDAR("日程", R.drawable.ic_nav_schedule),
+    QUEST("任务", R.drawable.ic_nav_quest),
+    SHOP("商城", R.drawable.ic_nav_shop),
+    STATS("复盘", R.drawable.ic_nav_stats),
+    SETTINGS("设置", R.drawable.ic_nav_settings),
 }
 
 class MainActivity : ComponentActivity() {
@@ -131,7 +137,11 @@ private fun NavRailItem(destination: Destination, isSelected: Boolean, onClick: 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(text = destination.glyph, style = MaterialTheme.typography.titleMedium)
+        Image(
+            painter = painterResource(destination.icon),
+            contentDescription = null,
+            modifier = Modifier.size(CiSizes.navRailIcon),
+        )
         Text(
             text = destination.label,
             style = MaterialTheme.typography.labelSmall,

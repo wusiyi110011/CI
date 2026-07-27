@@ -39,6 +39,9 @@ object CiSizes {
     /** NavigationRail 单项的点击区域边长。 */
     val navRailItem = 64.dp
 
+    /** NavigationRail 图标边长。 */
+    val navRailIcon = 26.dp
+
     /** 时间线左侧时刻尺宽度。 */
     val timeRulerWidth = 48.dp
 
