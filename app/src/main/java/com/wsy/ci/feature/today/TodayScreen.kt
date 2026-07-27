@@ -1,19 +1,20 @@
 package com.wsy.ci.feature.today
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,11 +27,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wsy.ci.core.db.DomainEntity
+import com.wsy.ci.core.db.QuestEntity
+import com.wsy.ci.core.db.QuestType
+import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
-import com.wsy.ci.core.db.TaskStatus
-import com.wsy.ci.core.economy.FocusOutcome
+import com.wsy.ci.core.designsystem.CiBalanceChip
+import com.wsy.ci.core.designsystem.CiChip
+import com.wsy.ci.core.designsystem.CiDifficultyChip
+import com.wsy.ci.core.designsystem.CiLegendDot
+import com.wsy.ci.core.designsystem.CiPanelCard
+import com.wsy.ci.core.designsystem.CiScreenHeader
+import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSizes
+import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.CiTextField
+import com.wsy.ci.core.designsystem.CiTextStyles
+import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -51,7 +69,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
     var showStopDialog by remember { mutableStateOf(false) }
 
-    // 每秒刷新，驱动计时器与「当前时刻」红线
+    // 每秒刷新，驱动计时器与「当前时刻」指示线
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -60,42 +78,64 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
         }
     }
 
-    Scaffold(
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text("添加任务") },
-                icon = { Text("＋") },
-                onClick = {
-                    val now = LocalTime.now()
-                    val startMin = (now.hour * 60 + now.minute + 14) / 15 * 15
-                    editing = TaskEntity(
-                        title = "",
-                        epochDay = LocalDate.now().toEpochDay(),
-                        startMinute = startMin.coerceAtMost(23 * 60),
-                        endMinute = (startMin + 60).coerceAtMost(24 * 60 - 1),
-                    )
-                },
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(CiSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
+        ) {
+            CiScreenHeader(
+                title = "今日",
+                subtitle = TimeFormat.date(LocalDate.now().toEpochDay()),
+                trailing = { CiBalanceChip(balance) },
             )
-        },
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            HeaderBar(balance = balance)
+
             running?.let { session ->
                 RunningCard(
-                    title = tasks.firstOrNull { it.id == session.taskId }?.title ?: "自由专注",
+                    session = session,
+                    tasks = tasks,
+                    quests = quests,
+                    domains = domains,
                     elapsedMillis = nowTick - session.startAt,
                     onStop = { showStopDialog = true },
                 )
-            } ?: FreeFocusRow(onStart = { viewModel.startTimer(null) })
-            NlAdjustRow(loading = nlState is TodayViewModel.NlState.Loading, onSubmit = viewModel::parseNl)
-            Spacer(modifier = Modifier.padding(4.dp))
+            } ?: IdleFocusCard(onStart = { viewModel.startTimer(null) })
+
+            NlAdjustRow(
+                loading = nlState is TodayViewModel.NlState.Loading,
+                onSubmit = viewModel::parseNl,
+            )
+
             DayTimeline(
                 tasks = tasks,
-                actuals = sessionsToBlocks(sessions, nowTick),
+                actuals = sessionsToBlocks(sessions, tasks, nowTick),
                 onTaskClick = { detailTask = it },
                 nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
                 modifier = Modifier.weight(1f),
             )
+
+            TimelineLegend()
+        }
+
+        FloatingActionButton(
+            onClick = {
+                val now = LocalTime.now()
+                val startMin = (now.hour * 60 + now.minute + 14) / 15 * 15
+                editing = TaskEntity(
+                    title = "",
+                    epochDay = LocalDate.now().toEpochDay(),
+                    startMinute = startMin.coerceAtMost(23 * 60),
+                    endMinute = (startMin + 60).coerceAtMost(24 * 60 - 1),
+                )
+            },
+            shape = CiShapes.fab,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(CiSpacing.lg)
+                .size(CiSizes.fab),
+        ) {
+            Text("＋", style = MaterialTheme.typography.headlineSmall)
         }
     }
 
@@ -139,215 +179,188 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     NlDialogs(state = nlState, viewModel = viewModel)
 }
 
+/** 进行中计时卡：领域 chip + 标题｜大号计时器｜结束按钮。 */
+@Composable
+private fun RunningCard(
+    session: SessionEntity,
+    tasks: List<TaskEntity>,
+    quests: List<QuestEntity>,
+    domains: List<DomainEntity>,
+    elapsedMillis: Long,
+    onStop: () -> Unit,
+) {
+    val task = tasks.firstOrNull { it.id == session.taskId }
+    val quest = quests.firstOrNull { it.id == task?.questId }
+    val domain = domains.firstOrNull { it.id == (task?.domainId ?: session.domainId) }
+
+    CiPanelCard(
+        modifier = Modifier.fillMaxWidth().height(CiSizes.timerCardHeight),
+        contentPadding = 20.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = 260.dp),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiChip(
+                    text = focusScopeLabel(quest, domain),
+                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                    content = MaterialTheme.colorScheme.onTertiaryContainer,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Text(
+                    text = task?.title ?: "自由专注",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = TimeFormat.elapsed(elapsedMillis),
+                style = CiTextStyles.timer,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+            Button(
+                onClick = onStop,
+                shape = CiShapes.pill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 30.dp,
+                    vertical = 14.dp,
+                ),
+            ) {
+                Text("结束", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** 「领域 chip」文案：主线/支线 · 领域名。 */
+private fun focusScopeLabel(quest: QuestEntity?, domain: DomainEntity?): String {
+    val kind = when (quest?.type) {
+        QuestType.MAIN -> "主线"
+        QuestType.SIDE -> "支线"
+        null -> "自由"
+    }
+    return domain?.name?.let { "$kind · $it" } ?: kind
+}
+
+/** 无进行中专注时占住计时卡的位置，保持屏内布局稳定。 */
+@Composable
+private fun IdleFocusCard(onStart: () -> Unit) {
+    CiPanelCard(
+        modifier = Modifier.fillMaxWidth().height(CiSizes.timerCardHeight),
+        contentPadding = 20.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                CiChip(
+                    text = "未在专注",
+                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    content = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Text(
+                    text = "点开时间线上的任务开始，或直接自由专注",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = "00:00",
+                style = CiTextStyles.timer,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            Button(
+                onClick = onStart,
+                shape = CiShapes.pill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 24.dp,
+                    vertical = 14.dp,
+                ),
+            ) {
+                Text("▶ 自由专注", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** 一句话调整行：输入框 + AI 重排按钮。 */
 @Composable
 private fun NlAdjustRow(loading: Boolean, onSubmit: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(CiSizes.fieldHeight),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
     ) {
-        androidx.compose.material3.OutlinedTextField(
+        CiTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("一句话调整：如「明天下午2-5点有事」") },
-            singleLine = true,
+            placeholder = "用一句话说明变化，例如：下午2点后要出门",
             modifier = Modifier.weight(1f),
         )
         Button(
             onClick = { onSubmit(text); text = "" },
             enabled = !loading && text.isNotBlank(),
-        ) { Text(if (loading) "解析中…" else "AI 重排") }
-    }
-}
-
-@Composable
-private fun NlDialogs(state: TodayViewModel.NlState, viewModel: TodayViewModel) {
-    when (state) {
-        is TodayViewModel.NlState.BlockerPreview -> AlertDialog(
-            onDismissRequest = viewModel::dismissNl,
-            title = { Text("解析出以下占位时段") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    state.blockers.forEach {
-                        Text("· ${it.date} ${it.start}–${it.end}  ${it.title}")
-                    }
-                    Text(
-                        "确认后这些时段将不可安排任务，并自动重排受影响的日程",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = { viewModel.confirmBlockers(state.blockers) }) { Text("确认并重排") }
-            },
-            dismissButton = { TextButton(onClick = viewModel::dismissNl) { Text("取消") } },
-        )
-        is TodayViewModel.NlState.Diff -> AlertDialog(
-            onDismissRequest = {},
-            title = { Text("重排预览") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    state.lines.forEach { Text("· $it") }
-                }
-            },
-            confirmButton = {
-                Button(onClick = { viewModel.applyDiff(state) }) { Text("应用") }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.cancelDiff(state) }) { Text("放弃（撤销占位）") }
-            },
-        )
-        is TodayViewModel.NlState.Error -> AlertDialog(
-            onDismissRequest = viewModel::dismissNl,
-            title = { Text("解析失败") },
-            text = { Text(state.message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissNl) { Text("知道了") } },
-        )
-        else -> Unit
-    }
-}
-
-@Composable
-private fun HeaderBar(balance: Long) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("今日", style = MaterialTheme.typography.headlineMedium)
+            shape = CiShapes.pill,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            ),
+            contentPadding = PaddingValues(
+                horizontal = 22.dp,
+                vertical = CiSpacing.sm,
+            ),
+        ) {
             Text(
-                TimeFormat.date(LocalDate.now().toEpochDay()),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.outline,
+                text = if (loading) "解析中…" else "✨ AI 重排",
+                style = MaterialTheme.typography.labelLarge,
             )
         }
-        AssistChip(onClick = {}, label = { Text("💰 $balance CI") })
     }
 }
 
+/** 图例行：4 档难度 chip + 4 态圆点。 */
 @Composable
-private fun RunningCard(title: String, elapsedMillis: Long, onStop: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    TimeFormat.elapsed(elapsedMillis),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-            }
-            Button(onClick = onStop) { Text("结束专注") }
-        }
-    }
-}
-
-@Composable
-private fun FreeFocusRow(onStart: () -> Unit) {
+private fun TimelineLegend() {
+    val colors = CiTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
     ) {
-        TextButton(onClick = onStart) { Text("▶ 自由专注（不关联任务）") }
+        LegendCaption("难度")
+        Difficulty.entries.forEach { CiDifficultyChip(it) }
+        LegendCaption("状态", startPadding = CiSpacing.sm)
+        CiLegendDot(colors.taskPlanned.accent, "计划中")
+        CiLegendDot(colors.taskRunning.accent, "进行中")
+        CiLegendDot(colors.taskDone.accent, "已完成")
+        CiLegendDot(colors.taskSkipped.accent, "已跳过")
     }
 }
 
 @Composable
-private fun TaskDetailDialog(
-    task: TaskEntity,
-    isTimerRunning: Boolean,
-    onStart: () -> Unit,
-    onEdit: () -> Unit,
-    onSkip: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(task.title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("${TimeFormat.minuteOfDay(task.startMinute)} – ${TimeFormat.minuteOfDay(task.endMinute)}")
-                Text("难度：${task.difficulty.label} ×${task.difficulty.factor}")
-                if (task.note.isNotBlank()) Text(task.note)
-                if (isTimerRunning && task.status == TaskStatus.PLANNED) {
-                    Text(
-                        "已有进行中的专注，结束后才能开始新任务",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            if (task.status == TaskStatus.PLANNED && !isTimerRunning) {
-                Button(onClick = onStart) { Text("▶ 开始专注") }
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onEdit) { Text("编辑") }
-                if (task.status == TaskStatus.PLANNED) {
-                    TextButton(onClick = onSkip) { Text("跳过") }
-                }
-                TextButton(onClick = onDismiss) { Text("关闭") }
-            }
-        },
-    )
-}
-
-@Composable
-private fun StopFocusDialog(onPick: (FocusOutcome) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("这次专注的结果？") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FocusOutcome.entries.forEach { outcome ->
-                    Button(
-                        onClick = { onPick(outcome) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("${outcome.label}（系数 ×${outcome.factor}）")
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-}
-
-@Composable
-private fun SettlementDialog(
-    settlement: com.wsy.ci.core.data.Settlement,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (settlement.newLevel != null) "🎉 升级啦！" else "✅ 专注入账") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("专注 ${TimeFormat.duration(settlement.minutes)}")
-                Text(
-                    "+${settlement.rewardCi} CI",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                if (settlement.expGained > 0) Text("领域经验 +${settlement.expGained}")
-                settlement.newLevel?.let { lv ->
-                    Text(
-                        "头衔升至 $lv 级，奖励 +${settlement.levelUpRewardCi} CI！",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("收下") } },
+private fun LegendCaption(text: String, startPadding: Dp = 0.dp) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = startPadding),
     )
 }
