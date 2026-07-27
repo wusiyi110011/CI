@@ -2,30 +2,30 @@ package com.wsy.ci.core.designsystem
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF3F6B35),
-    secondary = Color(0xFFB8860B),
-    tertiary = Color(0xFF4A6FA5)
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF8FBC7F),
-    secondary = Color(0xFFDAA520),
-    tertiary = Color(0xFF9BB8E0)
-)
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 
 @Composable
 fun CiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content
-    )
+    val colorScheme = if (darkTheme) CiDarkColorScheme else CiLightColorScheme
+    val ciColors = remember(darkTheme) { CiColors.from(colorScheme, isDark = darkTheme) }
+
+    CompositionLocalProvider(LocalCiColors provides ciColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = CiTypography,
+            shapes = CiShapeScale,
+            content = content,
+        )
+    }
+}
+
+/** 语义 token 的取用入口：`CiTheme.colors.income`。 */
+object CiTheme {
+    val colors: CiColors
+        @Composable get() = LocalCiColors.current
 }
