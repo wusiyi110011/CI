@@ -35,6 +35,16 @@ data class HeatScale(val containers: List<Color>, val contents: List<Color>) {
     fun container(level: Int): Color = containers[level.coerceIn(0, containers.lastIndex)]
 
     fun content(level: Int): Color = contents[level.coerceIn(0, contents.lastIndex)]
+
+    /**
+     * 把原始计数按 [max] 归一化到档位。[value] <= 0 恒为 0 档（「无」），
+     * 其余落在 1..levels-1，保证「有一点」和「完全没有」视觉上可区分。
+     */
+    fun levelOf(value: Int, max: Int): Int {
+        if (value <= 0) return 0
+        val ratio = value.toFloat() / max.coerceAtLeast(1)
+        return (1 + (ratio * (levels - 1)).toInt()).coerceIn(1, levels - 1)
+    }
 }
 
 /**

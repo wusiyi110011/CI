@@ -231,7 +231,7 @@ private fun HeatmapPanel(d: StatsData, modifier: Modifier = Modifier) {
                     )
                     for (hour in HEAT_START_HOUR until HEAT_END_HOUR) {
                         HeatCell(
-                            level = heatLevel(d.heat[dayOfWeek][hour], maxCell, scale.levels),
+                            level = scale.levelOf(d.heat[dayOfWeek][hour], maxCell),
                             scale = scale,
                             shape = CiShapes.heatCell,
                             modifier = Modifier.weight(1f),
@@ -256,7 +256,7 @@ private fun CheckinPanel(d: StatsData, modifier: Modifier = Modifier) {
                     row.forEach { day ->
                         val minutes = d.minutesByDay[day] ?: 0
                         HeatCell(
-                            level = heatLevel(minutes, maxMinutes, scale.levels),
+                            level = scale.levelOf(minutes, maxMinutes),
                             scale = scale,
                             shape = CiShapes.checkinCell,
                             modifier = Modifier.weight(1f),
@@ -392,13 +392,6 @@ private fun HeatCell(
             )
         }
     }
-}
-
-/** 把原始计数映射到 0..levels-1 的色阶档位；0 恒为「无」。 */
-private fun heatLevel(value: Int, max: Int, levels: Int): Int {
-    if (value <= 0) return 0
-    val ratio = value.toFloat() / max
-    return (1 + (ratio * (levels - 1)).toInt()).coerceIn(1, levels - 1)
 }
 
 /** 领域条形图的配色轮转，全部取自 ColorScheme。 */

@@ -15,8 +15,14 @@ internal val CiShapeScale = Shapes(
 
 /** 圆角的语义映射，见设计规格「圆角刻度」一节。 */
 object CiShapes {
+    /** 直角 = none(0)。 */
+    val none = RoundedCornerShape(0.dp)
+
     /** 时间线任务块 = sm(8)。 */
     val taskBlock = RoundedCornerShape(8.dp)
+
+    /** 周视图任务块，比日视图更紧凑。 */
+    val weekBlock = RoundedCornerShape(6.dp)
 
     /** 输入框 / 下拉选择器 = md(12)。 */
     val field = RoundedCornerShape(12.dp)
