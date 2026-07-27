@@ -2,7 +2,6 @@ package com.wsy.ci.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -70,7 +69,7 @@ class CiTodayWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val state = loadState(context)
         provideContent {
-            GlanceTheme {
+            GlanceTheme(colors = CiGlanceColors) {
                 TodayWidgetContent(state)
             }
         }
@@ -86,7 +85,7 @@ class CiTimerWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val state = loadState(context)
         provideContent {
-            GlanceTheme {
+            GlanceTheme(colors = CiGlanceColors) {
                 TimerWidgetContent(state)
             }
         }
@@ -114,7 +113,7 @@ private fun TodayWidgetContent(state: WidgetState) {
             if (state.runningTitle != null) {
                 Text(
                     "■ 结束「${state.runningTitle}」",
-                    style = TextStyle(color = ColorProvider(Color(0xFFB00020)), fontSize = 14.sp),
+                    style = TextStyle(color = GlanceTheme.colors.secondary, fontSize = 14.sp),
                     modifier = GlanceModifier.clickable(actionRunCallback<StopTimerAction>()),
                 )
             }
@@ -181,7 +180,7 @@ private fun TimerWidgetContent(state: WidgetState) {
             Text(state.runningTitle, style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp), maxLines = 1)
             Text(
                 "专注中 · 点击结束",
-                style = TextStyle(color = ColorProvider(Color(0xFFB00020)), fontSize = 13.sp),
+                style = TextStyle(color = GlanceTheme.colors.secondary, fontSize = 13.sp),
                 modifier = GlanceModifier.padding(top = 6.dp)
                     .clickable(actionRunCallback<StopTimerAction>()),
             )

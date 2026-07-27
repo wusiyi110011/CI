@@ -17,6 +17,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiShapes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +44,7 @@ fun RouteGenDialog(
             onDismiss = onDismiss,
         )
         RouteGenState.Loading -> AlertDialog(
+        shape = CiShapes.dialog,
             onDismissRequest = {},
             title = { Text("正在生成学习路线…") },
             text = {
@@ -73,24 +76,26 @@ private fun RouteInputDialog(
     var localError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text("🤖 AI 生成学习路线") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                CiFormField(
                     value = domain, onValueChange = { domain = it },
-                    label = { Text("想学什么（如：深度学习）") }, singleLine = true,
+                    label = "想学什么（如：深度学习）", singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                CiFormField(
                     value = hours, onValueChange = { hours = it },
-                    label = { Text("每周可投入小时数") }, singleLine = true,
+                    label = "每周可投入小时数", singleLine = true,
                     modifier = Modifier.width(200.dp),
                 )
-                OutlinedTextField(
+                CiFormField(
                     value = goal, onValueChange = { goal = it },
-                    label = { Text("目标（可选，如：三个月后能做项目）") },
+                    label = "目标（可选，如：三个月后能做项目）",
                     modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
                 )
                 (localError ?: error)?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -119,6 +124,7 @@ private fun RoutePreviewDialog(
     val totalHours = plan.chapters.sumOf { it.hours }
     val weeks = if (weeklyHours > 0) kotlin.math.ceil(totalHours / weeklyHours).toInt() else 0
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text("「${plan.domain}」路线预览") },
         text = {

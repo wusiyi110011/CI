@@ -19,6 +19,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.MaterialTheme
+import com.wsy.ci.core.designsystem.CiChip
+import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.CiShapes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +59,7 @@ fun TaskEditorDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text(if (initial.id == 0L) "新建任务" else "编辑任务") },
         text = {
@@ -59,37 +67,49 @@ fun TaskEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
-                OutlinedTextField(
+                CiFormField(
                     value = title, onValueChange = { title = it },
-                    label = { Text("任务名") }, singleLine = true,
+                    label = "任务名", singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
+                    CiFormField(
                         value = start, onValueChange = { start = it },
-                        label = { Text("开始 HH:mm") }, singleLine = true,
+                        label = "开始 HH:mm", singleLine = true,
                         modifier = Modifier.width(140.dp),
                     )
-                    OutlinedTextField(
+                    CiFormField(
                         value = end, onValueChange = { end = it },
-                        label = { Text("结束 HH:mm") }, singleLine = true,
+                        label = "结束 HH:mm", singleLine = true,
                         modifier = Modifier.width(140.dp),
                     )
                 }
-                Text("难度")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Difficulty.entries.forEach { d ->
-                        FilterChip(
-                            selected = difficulty == d,
-                            onClick = { difficulty = d },
-                            label = { Text("${d.label} ×${d.factor}") },
+                Text(
+                    text = "难度",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                    Difficulty.entries.forEach { option ->
+                        val colors = CiTheme.colors.difficulty(option)
+                        CiChip(
+                            text = "${option.label} ×${option.factor}",
+                            container = colors.container,
+                            content = colors.content,
+                            borderColor = if (difficulty == option) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                null
+                            },
+                            verticalPadding = 5.dp,
+                            modifier = Modifier.clickable { difficulty = option },
                         )
                     }
                 }
                 DomainPicker(domains, domainId, onSelect = { domainId = it })
-                OutlinedTextField(
+                CiFormField(
                     value = newDomainName, onValueChange = { newDomainName = it },
-                    label = { Text("或新建领域（回车前填名字，点保存时创建）") }, singleLine = true,
+                    label = "或新建领域（回车前填名字，点保存时创建）", singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 QuestPicker(quests, questId, onSelect = { questId = it })
@@ -142,11 +162,12 @@ private fun DomainPicker(
     var expanded by remember { mutableStateOf(false) }
     val selectedName = domains.firstOrNull { it.id == selected }?.name ?: "（无领域）"
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
+        CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
-            label = { Text("领域") },
+            label = "领域",
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            singleLine = false,
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
@@ -172,11 +193,12 @@ private fun QuestPicker(
     var expanded by remember { mutableStateOf(false) }
     val selectedName = quests.firstOrNull { it.id == selected }?.title ?: "（不关联任务线）"
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
+        CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
-            label = { Text("主线/支线") },
+            label = "主线/支线",
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            singleLine = false,
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
