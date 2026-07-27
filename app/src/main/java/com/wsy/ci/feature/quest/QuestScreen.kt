@@ -51,9 +51,11 @@ fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
     val message by viewModel.message.collectAsState()
 
     val routeGen by viewModel.routeGen.collectAsState()
+    val importResult by viewModel.importResult.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<QuestEntity?>(null) }
     var showRouteGen by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -83,8 +85,13 @@ fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("领域头衔") })
             }
             if (tab == 0) {
-                TextButton(onClick = { showRouteGen = true }, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("🤖 一句话生成学习路线（AI 排出章节主线）")
+                Row {
+                    TextButton(onClick = { showRouteGen = true }, modifier = Modifier.padding(top = 4.dp)) {
+                        Text("🤖 一句话生成学习路线（AI 排出章节主线）")
+                    }
+                    TextButton(onClick = { showImport = true }, modifier = Modifier.padding(top = 4.dp)) {
+                        Text("📥 导入 JSON 计划")
+                    }
                 }
             }
             when (tab) {
@@ -105,6 +112,15 @@ fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
             domains = domains,
             onSave = { viewModel.saveQuest(it) },
             onDismiss = { editing = null },
+        )
+    }
+
+    if (showImport) {
+        ImportDialog(
+            result = importResult,
+            onImport = viewModel::importJson,
+            onDismissResult = viewModel::dismissImportResult,
+            onDismiss = { showImport = false },
         )
     }
 

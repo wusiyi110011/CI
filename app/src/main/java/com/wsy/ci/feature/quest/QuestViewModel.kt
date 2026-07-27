@@ -8,11 +8,16 @@ import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
+import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.economy.Difficulty
+import com.wsy.ci.core.porting.CiImport
+import com.wsy.ci.core.porting.ImportParseResult
 import com.wsy.ci.core.title.Titles
 import com.wsy.ci.llm.LlmParsed
 import com.wsy.ci.llm.RoutePlan
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -121,5 +126,102 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissRouteGen() {
         routeGen.value = RouteGenState.Idle
+    }
+
+    // ---------- JSON 导入（外部/AI 设计好的计划一键落库） ----------
+
+    /** 返回给导入对话框的结果：null 表示尚未导入。 */
+    val importResult = MutableStateFlow<String?>(null)
+
+    fun importJson(text: String) {
+        viewModelScope.launch {
+            when (val parsed = CiImport.parse(text)) {
+                is ImportParseResult.Err -> {
+                    importResult.value = "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
+                }
+                is ImportParseResult.Ok -> importResult.value = applyImport(parsed.file)
+            }
+        }
+    }
+
+    private suspend fun applyImport(file: com.wsy.ci.core.porting.CiImportFile): String {
+        val importingMains = file.quests.count { it.type == "MAIN" }
+        val activeMains = db.questDao().activeByType(QuestType.MAIN).size
+        if (activeMains + importingMains > 2) {
+            return "❌ 主线最多同时 2 条：当前已有 $activeMains 条，导入含 $importingMains 条"
+        }
+
+        // 领域：按名字复用或新建；头衔线只在原来为空时覆盖
+        var domainId: Long? = null
+        file.domain?.let { d ->
+            val titlesJson = d.titles.takeIf { it.size == 6 }?.let { Titles.encode(it) }
+            val existing = db.domainDao().observeAll().first()
+                .firstOrNull { it.name == d.name.trim() }
+            domainId = if (existing != null) {
+                if (titlesJson != null && existing.titlesJson == null) {
+                    db.domainDao().update(existing.copy(titlesJson = titlesJson))
+                }
+                existing.id
+            } else {
+                db.domainDao().insert(DomainEntity(name = d.name.trim(), titlesJson = titlesJson))
+            }
+        }
+
+        // 任务线：记录标题 → id 映射，供 tasks 引用
+        val questIdByTitle = mutableMapOf<String, Long>()
+        db.questDao().observeAll().first()
+            .forEach { questIdByTitle[it.title] = it.id }
+        val json = kotlinx.serialization.json.Json
+        file.quests.forEach { q ->
+            val chaptersJson = q.chapters.takeIf { it.isNotEmpty() }?.let {
+                json.encodeToString(it.map { c ->
+                    com.wsy.ci.llm.RouteChapter(c.title, c.hours, c.resources)
+                })
+            }
+            val id = db.questDao().insert(
+                QuestEntity(
+                    domainId = domainId,
+                    type = if (q.type == "MAIN") QuestType.MAIN else QuestType.SIDE,
+                    title = q.title.trim(),
+                    description = q.description.trim(),
+                    deadlineEpochDay = q.deadline?.let { CiImport.parseDate(it) },
+                    chaptersJson = chaptersJson,
+                )
+            )
+            questIdByTitle[q.title.trim()] = id
+        }
+
+        // 具体任务
+        var unresolvedQuestRefs = 0
+        val tasks = file.tasks.map { t ->
+            val questId = t.quest?.trim()?.let { ref ->
+                questIdByTitle[ref].also { if (it == null) unresolvedQuestRefs++ }
+            }
+            TaskEntity(
+                title = t.title.trim(),
+                epochDay = CiImport.parseDate(t.date)!!,
+                startMinute = CiImport.parseHm(t.start)!!,
+                endMinute = CiImport.parseHm(t.end)!!,
+                difficulty = CiImport.parseDifficulty(t.difficulty) ?: Difficulty.NORMAL,
+                domainId = domainId,
+                questId = questId,
+                locked = t.locked,
+                note = t.note,
+            )
+        }
+        if (tasks.isNotEmpty()) db.taskDao().insertAll(tasks)
+
+        return buildString {
+            append("✅ 导入成功：")
+            file.domain?.let { append("领域「${it.name}」、") }
+            append("任务线 ${file.quests.size} 条、任务 ${file.tasks.size} 个")
+            if (unresolvedQuestRefs > 0) {
+                append("\n⚠️ 有 $unresolvedQuestRefs 个任务引用的任务线不存在，已按未关联导入")
+            }
+        }
+    }
+
+    fun dismissImportResult() {
+        importResult.value = null
     }
 }
