@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Compound Interest</string>
+    <string name="widget_today_desc">今日时间线：每项任务一键开始/结束</string>
+    <string name="widget_timer_desc">当前任务快捷开始/结束</string>
 </resources>

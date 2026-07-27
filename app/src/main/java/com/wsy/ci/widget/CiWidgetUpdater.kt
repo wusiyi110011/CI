@@ -1,10 +1,12 @@
 package com.wsy.ci.widget
 
 import android.content.Context
+import androidx.glance.appwidget.updateAll
 
-/** 小组件刷新入口。M2 接入 Glance 后在此触发所有小组件更新；当前为占位。 */
+/** 小组件刷新入口：数据变化（开始/结束计时、任务增删改）后调用。 */
 object CiWidgetUpdater {
     suspend fun updateAll(context: Context) {
-        // M2: GlanceAppWidgetManager 更新今日时间线/当前任务小组件
+        CiTodayWidget().updateAll(context)
+        CiTimerWidget().updateAll(context)
     }
 }
