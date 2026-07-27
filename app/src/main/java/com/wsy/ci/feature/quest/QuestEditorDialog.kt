@@ -19,6 +19,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiShapes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +51,7 @@ fun QuestEditorDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text(if (initial.id == 0L) "新建任务线" else "编辑任务线") },
         text = {
@@ -68,21 +71,22 @@ fun QuestEditorDialog(
                         label = { Text("🔁 支线（习惯，吃连击）") },
                     )
                 }
-                OutlinedTextField(
+                CiFormField(
                     value = title, onValueChange = { title = it },
-                    label = { Text("名称") }, singleLine = true,
+                    label = "名称", singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                CiFormField(
                     value = description, onValueChange = { description = it },
-                    label = { Text("描述（可选）") },
+                    label = "描述（可选）",
                     modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
                 )
                 DomainDropdown(domains, domainId) { domainId = it }
                 if (type == QuestType.MAIN) {
-                    OutlinedTextField(
+                    CiFormField(
                         value = deadline, onValueChange = { deadline = it },
-                        label = { Text("截止日期 yyyy-MM-dd（可选）") }, singleLine = true,
+                        label = "截止日期 yyyy-MM-dd（可选）", singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -125,11 +129,12 @@ private fun DomainDropdown(
     var expanded by remember { mutableStateOf(false) }
     val selectedName = domains.firstOrNull { it.id == selected }?.name ?: "（无领域）"
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
+        CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
-            label = { Text("关联领域（挣经验升头衔）") },
+            label = "关联领域（挣经验升头衔）",
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            singleLine = false,
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(text = { Text("（无领域）") }, onClick = { onSelect(null); expanded = false })

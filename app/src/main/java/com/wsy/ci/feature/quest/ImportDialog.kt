@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiShapes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +43,7 @@ fun ImportDialog(
 
     if (result != null) {
         AlertDialog(
+        shape = CiShapes.dialog,
             onDismissRequest = { onDismissResult(); if (result.startsWith("✅")) onDismiss() },
             title = { Text(if (result.startsWith("✅")) "导入完成" else "导入失败") },
             text = {
@@ -56,6 +59,7 @@ fun ImportDialog(
     }
 
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text("📥 导入 JSON 计划") },
         text = {
@@ -73,15 +77,16 @@ fun ImportDialog(
                         Text("📥 从剪贴板粘贴")
                     }
                 }
-                OutlinedTextField(
+                CiFormField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("粘贴 JSON") },
+                    label = "粘贴 JSON",
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 200.dp)
                         .height(280.dp)
                         .verticalScroll(rememberScrollState()),
+                    singleLine = false,
                 )
             }
         },

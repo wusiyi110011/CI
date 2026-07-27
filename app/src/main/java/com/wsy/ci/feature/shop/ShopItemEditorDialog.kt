@@ -14,6 +14,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiShapes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +50,7 @@ fun ShopItemEditorDialog(
     }
 
     AlertDialog(
+        shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { Text(if (initial.id == 0L) "上架商品" else "编辑商品") },
         text = {
@@ -56,30 +59,31 @@ fun ShopItemEditorDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
+                    CiFormField(
                         value = emoji, onValueChange = { emoji = it },
-                        label = { Text("图标") }, singleLine = true,
+                        label = "图标", singleLine = true,
                         modifier = Modifier.width(80.dp),
                     )
-                    OutlinedTextField(
+                    CiFormField(
                         value = name, onValueChange = { name = it },
-                        label = { Text("名称") }, singleLine = true,
+                        label = "名称", singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                OutlinedTextField(
+                CiFormField(
                     value = description, onValueChange = { description = it },
-                    label = { Text("描述（可选）") },
+                    label = "描述（可选）",
                     modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
+                    CiFormField(
                         value = priceText,
                         onValueChange = { priceText = it; autoSuggestRarity() },
-                        label = { Text("价格 CI") }, singleLine = true,
+                        label = "价格 CI", singleLine = true,
                         modifier = Modifier.width(140.dp),
                     )
-                    OutlinedTextField(
+                    CiFormField(
                         value = yuanText,
                         onValueChange = {
                             yuanText = it
@@ -88,7 +92,7 @@ fun ShopItemEditorDialog(
                                 autoSuggestRarity()
                             }
                         },
-                        label = { Text("按元换算(1元=20CI)") }, singleLine = true,
+                        label = "按元换算(1元=20CI)", singleLine = true,
                         modifier = Modifier.width(180.dp),
                     )
                 }

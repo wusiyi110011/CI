@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -203,6 +205,43 @@ fun CiTextField(
                 trailing?.invoke()
             }
         },
+    )
+}
+
+/**
+ * 带浮动 label 的表单输入框：圆角 12 + surfaceContainerLow 底，其余沿用 M3 行为。
+ * 表单类弹窗字段多，保留 label 比 placeholder 更清楚，故与 [CiTextField] 并存。
+ */
+@Composable
+fun CiFormField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    readOnly: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: (@Composable () -> Unit)? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier,
+        singleLine = singleLine,
+        minLines = minLines,
+        readOnly = readOnly,
+        keyboardOptions = keyboardOptions,
+        visualTransformation = visualTransformation,
+        trailingIcon = trailingIcon,
+        shape = CiShapes.field,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        ),
     )
 }
 
