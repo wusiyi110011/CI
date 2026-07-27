@@ -51,7 +51,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class CalendarMode(val label: String) { DAY("日"), WEEK("周") }
+enum class CalendarMode(val label: String) { DAY("日"), WEEK("周"), MONTH("月") }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModel(app: Application) : AndroidViewModel(app) {
@@ -77,6 +77,15 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         db.taskDao().observeByRange(start, start + 6)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** 所选月份每日专注分钟（月热力图）。 */
+    val monthMinutes = selectedDay.flatMapLatest { day ->
+        val date = LocalDate.ofEpochDay(day)
+        val first = date.withDayOfMonth(1).toEpochDay()
+        val last = date.withDayOfMonth(date.lengthOfMonth()).toEpochDay()
+        db.sessionDao()
+            .observeByTimeRange(TimeFormat.dayStartMillis(first), TimeFormat.dayEndMillis(last))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val domains = db.domainDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -84,6 +93,10 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun shift(days: Long) { selectedDay.value += days }
+
+    fun shiftMonth(delta: Long) {
+        selectedDay.value = LocalDate.ofEpochDay(selectedDay.value).plusMonths(delta).toEpochDay()
+    }
     fun today() { selectedDay.value = LocalDate.now().toEpochDay() }
 
     fun saveTask(task: TaskEntity) {
@@ -103,6 +116,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
     val dayTasks by viewModel.dayTasks.collectAsState()
     val daySessions by viewModel.daySessions.collectAsState()
     val weekTasks by viewModel.weekTasks.collectAsState()
+    val monthSessions by viewModel.monthMinutes.collectAsState()
     val domains by viewModel.domains.collectAsState()
     val quests by viewModel.quests.collectAsState()
 
@@ -111,7 +125,13 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { viewModel.shift(if (mode == CalendarMode.DAY) -1 else -7) }) { Text("◀") }
+            IconButton(onClick = {
+                when (mode) {
+                    CalendarMode.DAY -> viewModel.shift(-1)
+                    CalendarMode.WEEK -> viewModel.shift(-7)
+                    CalendarMode.MONTH -> viewModel.shiftMonth(-1)
+                }
+            }) { Text("◀") }
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -119,7 +139,13 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                 Text(TimeFormat.date(selectedDay), style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = viewModel::today) { Text("回到今天") }
             }
-            IconButton(onClick = { viewModel.shift(if (mode == CalendarMode.DAY) 1 else 7) }) { Text("▶") }
+            IconButton(onClick = {
+                when (mode) {
+                    CalendarMode.DAY -> viewModel.shift(1)
+                    CalendarMode.WEEK -> viewModel.shift(7)
+                    CalendarMode.MONTH -> viewModel.shiftMonth(1)
+                }
+            }) { Text("▶") }
             SingleChoiceSegmentedButtonRow {
                 CalendarMode.entries.forEachIndexed { i, m ->
                     SegmentedButton(
@@ -141,6 +167,15 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                 weekStartDay = LocalDate.ofEpochDay(selectedDay).with(DayOfWeek.MONDAY).toEpochDay(),
                 tasks = weekTasks,
                 onTaskClick = { editing = it },
+                modifier = Modifier.weight(1f),
+            )
+            CalendarMode.MONTH -> MonthHeatmap(
+                selectedDay = selectedDay,
+                sessions = monthSessions,
+                onDayClick = { day ->
+                    viewModel.selectedDay.value = day
+                    mode = CalendarMode.DAY
+                },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -206,6 +241,85 @@ private fun WeekGrid(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthHeatmap(
+    selectedDay: Long,
+    sessions: List<com.wsy.ci.core.db.SessionEntity>,
+    onDayClick: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val date = LocalDate.ofEpochDay(selectedDay)
+    val firstDay = date.withDayOfMonth(1)
+    val daysInMonth = date.lengthOfMonth()
+    val leadingBlanks = firstDay.dayOfWeek.value - 1
+    val minutesByDay = sessions
+        .filter { it.endAt != null }
+        .groupBy { TimeFormat.millisToEpochDay(it.startAt) }
+        .mapValues { (_, list) -> list.sumOf { ((it.endAt!! - it.startAt) / 60_000).toInt() } }
+    val maxMin = minutesByDay.values.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val today = LocalDate.now().toEpochDay()
+
+    Column(modifier = modifier.padding(top = 12.dp)) {
+        Text(
+            "${date.year}年${date.monthValue}月 · 专注热力图（共 ${TimeFormat.duration(minutesByDay.values.sum())}）",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            listOf("一", "二", "三", "四", "五", "六", "日").forEach {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        val cells = List(leadingBlanks) { null } + (1..daysInMonth).toList()
+        cells.chunked(7).forEach { week ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                week.forEach { dayOfMonth ->
+                    Box(modifier = Modifier.weight(1f).padding(2.dp)) {
+                        if (dayOfMonth != null) {
+                            val epochDay = firstDay.plusDays((dayOfMonth - 1).toLong()).toEpochDay()
+                            val minutes = minutesByDay[epochDay] ?: 0
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        MaterialTheme.colorScheme.primary.copy(
+                                            alpha = if (minutes == 0) 0.05f else 0.2f + 0.8f * minutes / maxMin
+                                        )
+                                    )
+                                    .clickable { onDayClick(epochDay) }
+                                    .padding(4.dp),
+                            ) {
+                                Text(
+                                    "$dayOfMonth",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (epochDay == today) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface,
+                                )
+                                if (minutes > 0) {
+                                    Text(
+                                        TimeFormat.duration(minutes),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                repeat(7 - week.size) { Box(modifier = Modifier.weight(1f)) }
             }
         }
     }

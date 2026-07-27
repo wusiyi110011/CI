@@ -66,4 +66,44 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissMessage() {
         message.value = null
     }
+
+    // ---------- AI 估价上架 ----------
+
+    sealed interface AiPriceState {
+        data object Idle : AiPriceState
+        data object Loading : AiPriceState
+        /** 估好价的商品草稿，交编辑对话框确认。 */
+        data class Draft(val item: ShopItemEntity) : AiPriceState
+    }
+
+    val aiPrice = MutableStateFlow<AiPriceState>(AiPriceState.Idle)
+
+    fun requestAiPrice(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            aiPrice.value = AiPriceState.Loading
+            when (val r = (getApplication<Application>() as CiApp).container.llmService.priceItem(name)) {
+                is com.wsy.ci.llm.LlmParsed.Ok -> {
+                    val (priceCi, rarity, priced) = r.value
+                    aiPrice.value = AiPriceState.Draft(
+                        ShopItemEntity(
+                            name = name.trim(),
+                            description = priced.description,
+                            emoji = priced.emoji.ifBlank { "🎁" },
+                            priceCi = priceCi,
+                            rarity = rarity,
+                        )
+                    )
+                }
+                is com.wsy.ci.llm.LlmParsed.Err -> {
+                    message.value = r.message
+                    aiPrice.value = AiPriceState.Idle
+                }
+            }
+        }
+    }
+
+    fun dismissAiPrice() {
+        aiPrice.value = AiPriceState.Idle
+    }
 }

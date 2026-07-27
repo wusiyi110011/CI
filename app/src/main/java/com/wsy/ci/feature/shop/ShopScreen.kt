@@ -59,8 +59,10 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
     val ledger by viewModel.ledger.collectAsState()
     val message by viewModel.message.collectAsState()
 
+    val aiPrice by viewModel.aiPrice.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<ShopItemEntity?>(null) }
+    var showAiInput by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -102,11 +104,16 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     },
                     onBuy = { pick, item -> viewModel.purchase(item.id, pick.id) },
                 )
-                1 -> ShelfGrid(
-                    items = items,
-                    onBuy = { viewModel.purchase(it.id) },
-                    onEdit = { editing = it },
-                )
+                1 -> Column {
+                    TextButton(onClick = { showAiInput = true }) {
+                        Text("🤖 AI 估价上架：输入名字自动定价定品质")
+                    }
+                    ShelfGrid(
+                        items = items,
+                        onBuy = { viewModel.purchase(it.id) },
+                        onEdit = { editing = it },
+                    )
+                }
                 2 -> LedgerList(ledger)
             }
         }
@@ -120,6 +127,57 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             onDismiss = { editing = null },
         )
     }
+
+    if (showAiInput) {
+        AiPriceInputDialog(
+            loading = aiPrice is ShopViewModel.AiPriceState.Loading,
+            onSubmit = viewModel::requestAiPrice,
+            onDismiss = {
+                showAiInput = false
+                viewModel.dismissAiPrice()
+            },
+        )
+    }
+    (aiPrice as? ShopViewModel.AiPriceState.Draft)?.let { draft ->
+        showAiInput = false
+        ShopItemEditorDialog(
+            initial = draft.item,
+            onSave = viewModel::saveItem,
+            onDelete = null,
+            onDismiss = { viewModel.dismissAiPrice() },
+        )
+    }
+}
+
+@Composable
+private fun AiPriceInputDialog(
+    loading: Boolean,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI 估价上架") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("奖励名（如：看一场电影 / iPhone 17）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (loading) Text("估价中…", color = MaterialTheme.colorScheme.outline)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSubmit(name) }, enabled = !loading && name.isNotBlank()) {
+                Text("估价")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable
