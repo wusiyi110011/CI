@@ -33,8 +33,11 @@ object CiShapes {
     /** 对话框 = xl(28)。 */
     val dialog = RoundedCornerShape(28.dp)
 
-    /** 热力图格子。 */
+    /** 黄金时段热力图格子。 */
     val heatCell = RoundedCornerShape(2.dp)
+
+    /** 每日打卡格子。 */
+    val checkinCell = RoundedCornerShape(3.dp)
 
     /** 月视图日历格。 */
     val monthCell = RoundedCornerShape(10.dp)
