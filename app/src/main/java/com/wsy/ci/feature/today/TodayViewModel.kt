@@ -5,12 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.data.Settlement
+import com.wsy.ci.core.db.BlockerEntity
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.economy.FocusOutcome
+import com.wsy.ci.core.scheduler.RescheduleResult
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.llm.LlmParsed
+import com.wsy.ci.llm.ParsedBlocker
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.LocalDate
@@ -95,5 +99,101 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             val id = db.domainDao().insert(DomainEntity(name = name))
             onCreated(id)
         }
+    }
+
+    // ---------- 一句话调整（NL → blocker → 重排 diff → 确认） ----------
+
+    sealed interface NlState {
+        data object Idle : NlState
+        data object Loading : NlState
+        data class BlockerPreview(val blockers: List<ParsedBlocker>) : NlState
+        data class Diff(
+            val results: List<Pair<Long, RescheduleResult>>,
+            val lines: List<String>,
+            val inserted: List<BlockerEntity>,
+        ) : NlState
+        data class Error(val message: String) : NlState
+    }
+
+    val nlState = MutableStateFlow<NlState>(NlState.Idle)
+
+    fun parseNl(text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            nlState.value = NlState.Loading
+            nlState.value = when (val r = container.llmService.parseBlockers(text)) {
+                is LlmParsed.Ok -> NlState.BlockerPreview(r.value)
+                is LlmParsed.Err -> NlState.Error(r.message)
+            }
+        }
+    }
+
+    /** 确认插入占位事件并生成各受影响日期的重排 diff。 */
+    fun confirmBlockers(parsed: List<ParsedBlocker>) {
+        viewModelScope.launch {
+            val schedule = container.scheduleRepository
+            val entities = parsed.mapNotNull { it.toEntityOrNull() }
+            if (entities.isEmpty()) {
+                nlState.value = NlState.Error("时间段无法解析，请换个说法")
+                return@launch
+            }
+            val inserted = entities.map { e ->
+                e.copy(id = schedule.addBlocker(e))
+            }
+            val days = inserted.map { it.epochDay }.distinct().sorted()
+            val results = mutableListOf<Pair<Long, RescheduleResult>>()
+            val lines = mutableListOf<String>()
+            for (day in days) {
+                val (result, original) = schedule.previewReschedule(day)
+                results.add(day to result)
+                lines.addAll(
+                    schedule.describeDiff(result, original)
+                        .map { "${TimeFormat.shortDate(day)} $it" }
+                )
+            }
+            if (lines.isEmpty()) lines.add("占位已记录，现有任务无需移动")
+            nlState.value = NlState.Diff(results, lines, inserted)
+        }
+    }
+
+    fun applyDiff(diff: NlState.Diff) {
+        viewModelScope.launch {
+            diff.results.forEach { (_, result) ->
+                container.scheduleRepository.applyReschedule(result)
+            }
+            nlState.value = NlState.Idle
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /** 放弃：撤销刚插入的占位事件。 */
+    fun cancelDiff(diff: NlState.Diff) {
+        viewModelScope.launch {
+            diff.inserted.forEach { container.scheduleRepository.removeBlocker(it) }
+            nlState.value = NlState.Idle
+        }
+    }
+
+    fun dismissNl() {
+        nlState.value = NlState.Idle
+    }
+
+    private fun ParsedBlocker.toEntityOrNull(): BlockerEntity? = try {
+        val day = LocalDate.parse(date).toEpochDay()
+        val startMin = parseHm(start) ?: return null
+        val endMin = parseHm(end) ?: return null
+        if (endMin <= startMin) null
+        else BlockerEntity(epochDay = day, startMinute = startMin, endMinute = endMin, title = title)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun parseHm(text: String): Int? {
+        val parts = text.trim().split(":")
+        if (parts.size != 2) return null
+        val h = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        if (h !in 0..23 || m !in 0..59) return null
+        return h * 60 + m
     }
 }

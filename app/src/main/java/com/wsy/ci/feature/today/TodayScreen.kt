@@ -45,6 +45,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     val quests by viewModel.quests.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val settlement by viewModel.lastSettlement.collectAsState()
+    val nlState by viewModel.nlState.collectAsState()
 
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
     var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
@@ -86,6 +87,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                     onStop = { showStopDialog = true },
                 )
             } ?: FreeFocusRow(onStart = { viewModel.startTimer(null) })
+            NlAdjustRow(loading = nlState is TodayViewModel.NlState.Loading, onSubmit = viewModel::parseNl)
             Spacer(modifier = Modifier.padding(4.dp))
             DayTimeline(
                 tasks = tasks,
@@ -132,6 +134,78 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
     settlement?.let { s ->
         SettlementDialog(settlement = s, onDismiss = viewModel::dismissSettlement)
+    }
+
+    NlDialogs(state = nlState, viewModel = viewModel)
+}
+
+@Composable
+private fun NlAdjustRow(loading: Boolean, onSubmit: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.material3.OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("一句话调整：如「明天下午2-5点有事」") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(
+            onClick = { onSubmit(text); text = "" },
+            enabled = !loading && text.isNotBlank(),
+        ) { Text(if (loading) "解析中…" else "AI 重排") }
+    }
+}
+
+@Composable
+private fun NlDialogs(state: TodayViewModel.NlState, viewModel: TodayViewModel) {
+    when (state) {
+        is TodayViewModel.NlState.BlockerPreview -> AlertDialog(
+            onDismissRequest = viewModel::dismissNl,
+            title = { Text("解析出以下占位时段") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    state.blockers.forEach {
+                        Text("· ${it.date} ${it.start}–${it.end}  ${it.title}")
+                    }
+                    Text(
+                        "确认后这些时段将不可安排任务，并自动重排受影响的日程",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.confirmBlockers(state.blockers) }) { Text("确认并重排") }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissNl) { Text("取消") } },
+        )
+        is TodayViewModel.NlState.Diff -> AlertDialog(
+            onDismissRequest = {},
+            title = { Text("重排预览") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    state.lines.forEach { Text("· $it") }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.applyDiff(state) }) { Text("应用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelDiff(state) }) { Text("放弃（撤销占位）") }
+            },
+        )
+        is TodayViewModel.NlState.Error -> AlertDialog(
+            onDismissRequest = viewModel::dismissNl,
+            title = { Text("解析失败") },
+            text = { Text(state.message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissNl) { Text("知道了") } },
+        )
+        else -> Unit
     }
 }
 
