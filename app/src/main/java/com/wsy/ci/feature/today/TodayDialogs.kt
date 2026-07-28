@@ -274,6 +274,15 @@ internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (settlement.checkinRewardCi > 0) {
+            Text(
+                text = "🔥 连续打卡 ${settlement.checkinStreak} 天，" +
+                    "额外 +${settlement.checkinRewardCi} CI",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+        }
         settlement.newLevel?.let { level ->
             Text(
                 text = "🎉 头衔升至 Lv.$level，奖励 +${settlement.levelUpRewardCi} CI",

@@ -9,8 +9,12 @@ import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
+import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import kotlin.math.roundToInt
+
+/** 连续打卡回溯窗口：一年多，足够覆盖任何现实中的连续记录。 */
+private const val CHECKIN_LOOKBACK_DAYS = 400L
 
 /** 一次结算的产出，用于 UI 展示（入账吐司 / 升级庆祝）。 */
 data class Settlement(
@@ -20,6 +24,9 @@ data class Settlement(
     val domainId: Long?,
     val newLevel: Int?,
     val levelUpRewardCi: Long,
+    /** 本次触发的连续打卡天数；0 表示今天已领过或本次是放弃。 */
+    val checkinStreak: Int = 0,
+    val checkinRewardCi: Long = 0,
 )
 
 /**
@@ -81,6 +88,7 @@ class TimerRepository(private val db: CiDatabase) {
             )
         }
         val levelUp = settleExp(session.domainId ?: task?.domainId, exp)
+        val (checkinStreak, checkinReward) = settleCheckin(now, focus)
         return Settlement(
             minutes = minutes,
             rewardCi = reward,
@@ -88,7 +96,43 @@ class TimerRepository(private val db: CiDatabase) {
             domainId = session.domainId ?: task?.domainId,
             newLevel = levelUp?.first,
             levelUpRewardCi = levelUp?.second ?: 0,
+            checkinStreak = checkinStreak,
+            checkinRewardCi = checkinReward,
         )
+    }
+
+    /**
+     * 每日打卡结算：当天首次完成专注时发一笔定额奖，连续天数越长越高。
+     * 返回 (连续天数, 奖励)，今天已领过或不该发时返回 0 to 0。
+     *
+     * 连续天数直接从 sessions 推导、发没发过靠 ledger 去重，
+     * 所以这套机制没有引入任何新表或新字段。
+     *
+     * 放弃不算打卡——那天没有真正的投入。注意本次 session 的 endAt
+     * 在调用前已经写好了，所以今天会被算进 daysWithFocus。
+     */
+    private suspend fun settleCheckin(nowMillis: Long, focus: FocusOutcome): Pair<Int, Long> {
+        if (focus == FocusOutcome.ABANDONED) return 0 to 0
+        val today = TimeFormat.millisToEpochDay(nowMillis)
+        if (db.ledgerDao().checkinCount(today) > 0) return 0 to 0
+
+        val since = TimeFormat.dayStartMillis(today - CHECKIN_LOOKBACK_DAYS)
+        val daysWithFocus = db.sessionDao().completedStartsSince(since)
+            .map { TimeFormat.millisToEpochDay(it) }
+            .toSet()
+        val streak = Economy.checkinStreak(daysWithFocus, today)
+        val reward = Economy.checkinReward(streak)
+        if (reward <= 0) return 0 to 0
+
+        db.ledgerDao().insert(
+            LedgerEntity(
+                amount = reward,
+                type = LedgerType.EARN_STREAK,
+                refId = today,
+                note = "连续打卡 $streak 天",
+            )
+        )
+        return streak to reward
     }
 
     /**
