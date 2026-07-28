@@ -51,17 +51,24 @@ import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.designsystem.TaskBlockColors
+import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.Span
 import com.wsy.ci.core.timeline.TaskLanes
+import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
 
-/** 时间线上的一个实际记录块（由 session 换算而来）。 */
+/**
+ * 时间线上的一个实际记录块（由 session 换算而来）。
+ * [isContinuation] 为 true 表示这是前一天的专注延续过来的尾巴，只画占用框不写标题。
+ */
 data class ActualBlock(
+    val sessionId: Long,
     val title: String,
     val startMinute: Int,
     val endMinute: Int,
     val running: Boolean,
     val rewardCi: Long,
+    val isContinuation: Boolean = false,
 )
 
 /** 每分钟 1.1dp，即每小时 66dp，与设计画布的纵向比例一致。 */
@@ -77,28 +84,39 @@ private val BLOCK_GAP: Dp = 3.dp
 /** 自动滚动时，当前时刻上方预留的一段上下文高度。 */
 private val SCROLL_LEAD_IN: Dp = 120.dp
 
+/**
+ * 窗口末尾额外留出的高度：末班车任务（如 23:50 起）按最小块高往下撑，
+ * 末尾整点的刻度标签也要地方落笔，不留这一段就会被容器裁掉。
+ */
+private val BOTTOM_SLACK: Dp = MIN_BLOCK_HEIGHT
+
 /** 计划轨 : 实际轨 = 55 : 45。 */
 private const val PLAN_TRACK_WEIGHT = 0.55f
 private const val ACTUAL_TRACK_WEIGHT = 0.45f
 
 /**
  * 双轨时间线：左轨计划块（可点击），右轨实际记录块，左侧 48dp 时刻尺。
- * 高度按分钟线性映射，默认渲染 5:00–24:00。
+ * 高度按分钟线性映射，整天 0:00–24:00 全铺，深夜与凌晨的任务照样有自己的位置；
+ * 进屏时自动滚到当前时刻，不会一开门就是一片空夜。
+ *
+ * 画的是「这一天」的片段（见 [DaySegments]）：跨零点的块在两天各画一段，
+ * 次日那段只有占用框、不重复写标题。
  *
  * [showActualTrack] 为 false 时退化为单轨满宽（日程屏的「日」视图）。
  */
 @Composable
 fun DayTimeline(
-    tasks: List<TaskEntity>,
+    segments: List<TaskSegment>,
     actuals: List<ActualBlock>,
     onTaskClick: (TaskEntity) -> Unit,
     modifier: Modifier = Modifier,
-    startHour: Int = 5,
+    onActualClick: (ActualBlock) -> Unit = {},
+    startHour: Int = 0,
     endHour: Int = 24,
     nowMinute: Int? = null,
     showActualTrack: Boolean = true,
 ) {
-    val totalHeight = HOUR_HEIGHT * (endHour - startHour)
+    val totalHeight = HOUR_HEIGHT * (endHour - startHour) + BOTTOM_SLACK
     fun yOf(minute: Int): Dp =
         HOUR_HEIGHT * ((minute - startHour * 60).coerceAtLeast(0) / MINUTES_PER_HOUR)
 
@@ -133,19 +151,19 @@ fun DayTimeline(
                     dashedLeftEdge = true,
                 ) {
                     // 时段重叠的任务并排画，互不遮挡；不重叠时照旧独占整轨
-                    val lanes = remember(tasks) {
-                        TaskLanes.assign(tasks.map { Span(it.startMinute, it.endMinute) })
+                    val lanes = remember(segments) {
+                        TaskLanes.assign(segments.map { Span(it.startMinute, it.endMinute) })
                     }
                     val trackWidth = maxWidth
-                    tasks.forEachIndexed { index, task ->
+                    segments.forEachIndexed { index, segment ->
                         val lane = lanes[index]
                         PlannedBlock(
-                            task = task,
+                            segment = segment,
                             x = trackWidth * lane.lane / lane.laneCount,
-                            y = yOf(task.startMinute),
+                            y = yOf(segment.startMinute),
                             width = trackWidth / lane.laneCount,
-                            height = heightOf(task.startMinute, task.endMinute),
-                            onClick = { onTaskClick(task) },
+                            height = heightOf(segment.startMinute, segment.endMinute),
+                            onClick = { onTaskClick(segment.task) },
                         )
                     }
                 }
@@ -157,6 +175,7 @@ fun DayTimeline(
                                 block = block,
                                 y = yOf(block.startMinute),
                                 height = heightOf(block.startMinute, block.endMinute),
+                                onClick = { onActualClick(block) },
                             )
                         }
                     }
@@ -288,42 +307,50 @@ private fun CurrentTimeLine(minute: Int, y: Dp) {
 
 @Composable
 private fun PlannedBlock(
-    task: TaskEntity,
+    segment: TaskSegment,
     x: Dp,
     y: Dp,
     width: Dp,
     height: Dp,
     onClick: () -> Unit,
 ) {
+    val task = segment.task
     val colors = CiTheme.colors.taskBlock(task.status)
+    // 跨零点延续过来的那一段只占位：标题在开工的那天已经写过了
+    val lock = if (task.locked && task.status == TaskStatus.PLANNED) "🔒 " else ""
     TaskBlock(
         colors = colors,
         x = x,
         y = y,
         width = width,
         height = height,
-        title = (if (task.locked && task.status == TaskStatus.PLANNED) "🔒 " else "") + task.title,
-        caption = "${TimeFormat.minuteOfDay(task.startMinute)}–${TimeFormat.minuteOfDay(task.endMinute)}" +
-            " · ${task.difficulty.label}",
+        title = if (segment.isContinuation) "" else lock + task.title,
+        caption = if (segment.isContinuation) {
+            ""
+        } else {
+            "${TimeFormat.minuteOfDay(task.startMinute)}–${TimeFormat.minuteOfDay(task.endMinute)}" +
+                " · ${task.difficulty.label}"
+        },
         modifier = Modifier.clickable(onClick = onClick),
     )
 }
 
 @Composable
-private fun ActualBlockView(block: ActualBlock, y: Dp, height: Dp) {
+private fun ActualBlockView(block: ActualBlock, y: Dp, height: Dp, onClick: () -> Unit) {
     val colors = if (block.running) CiTheme.colors.taskRunning else CiTheme.colors.taskDone
-    val caption = if (block.running) {
-        "专注中…"
-    } else {
-        TimeFormat.duration(block.endMinute - block.startMinute) +
+    val caption = when {
+        block.isContinuation -> ""
+        block.running -> "专注中…"
+        else -> TimeFormat.duration(block.endMinute - block.startMinute) +
             if (block.rewardCi > 0) " · +${block.rewardCi} CI" else ""
     }
     TaskBlock(
         colors = colors,
         y = y,
         height = height,
-        title = block.title,
+        title = if (block.isContinuation) "" else block.title,
         caption = caption,
+        modifier = Modifier.clickable(onClick = onClick),
     )
 }
 
@@ -359,48 +386,67 @@ private fun TaskBlock(
                 .fillMaxHeight()
                 .background(colors.accent)
         )
+        // 文案为空的是跨天延续段，只留下框本身占住时段
         Column(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = CiSpacing.xxs + 2.dp),
             verticalArrangement = Arrangement.Top,
         ) {
-            Text(
-                text = title,
-                style = CiTextStyles.blockTitle,
-                color = colors.content,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
-            )
-            Text(
-                text = caption,
-                style = CiTextStyles.blockCaption,
-                color = colors.content.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (title.isNotEmpty()) {
+                Text(
+                    text = title,
+                    style = CiTextStyles.blockTitle,
+                    color = colors.content,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
+                )
+            }
+            if (caption.isNotEmpty()) {
+                Text(
+                    text = caption,
+                    style = CiTextStyles.blockCaption,
+                    color = colors.content.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 /**
- * sessions → 时间线块。标题按「具体任务 → 任务线 → 自由专注」依次回填：
- * 支线打卡不挂任务，只有 questId，落到任务线名上才不会一片「自由专注」。
+ * sessions → [epochDay] 这一天的时间线块。标题按「具体任务 → 任务线 → 自由专注」
+ * 依次回填：支线打卡不挂任务，只有 questId，落到任务线名上才不会一片「自由专注」。
+ *
+ * 与计划轨同一套跨天规则：结束时刻按时长推算（次日的「当日分钟数」比起始还小，
+ * 直接取会把整段压成一条线），再按天切片，跨零点的专注在两天各画一段。
  */
 fun sessionsToBlocks(
     sessions: List<SessionEntity>,
     tasks: List<TaskEntity>,
     nowMillis: Long,
+    epochDay: Long,
     quests: List<QuestEntity> = emptyList(),
-): List<ActualBlock> = sessions.map { session ->
+): List<ActualBlock> = sessions.mapNotNull { session ->
+    val startDay = TimeFormat.millisToEpochDay(session.startAt)
     val startMinute = TimeFormat.millisToMinuteOfDay(session.startAt)
     val end = session.endAt ?: nowMillis
+    val elapsedMinutes = ((end - session.startAt) / 60_000L).toInt().coerceAtLeast(1)
+    val slice = DaySegments.project(
+        fromEpochDay = startDay,
+        startMinute = startMinute,
+        endMinute = startMinute + elapsedMinutes,
+        onEpochDay = epochDay,
+    ) ?: return@mapNotNull null
     val task = tasks.firstOrNull { it.id == session.taskId }
     val quest = quests.firstOrNull { it.id == (task?.questId ?: session.questId) }
     ActualBlock(
+        sessionId = session.id,
         title = task?.title ?: quest?.title ?: "自由专注",
-        startMinute = startMinute,
-        endMinute = TimeFormat.millisToMinuteOfDay(end).coerceAtLeast(startMinute + 1),
+        startMinute = slice.startMinute,
+        endMinute = slice.endMinute,
         running = session.endAt == null,
         rewardCi = session.rewardCi,
+        isContinuation = slice.isContinuation,
     )
 }

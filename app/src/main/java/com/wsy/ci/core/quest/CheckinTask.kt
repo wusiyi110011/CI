@@ -4,9 +4,6 @@ import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.economy.Difficulty
 
-/** 当日最后一分钟：深夜打卡时结束时间截到这里，不跨天。 */
-private const val LAST_MINUTE_OF_DAY = 24 * 60 - 1
-
 /** 打卡任务的默认时长。真实时长以 session 计时为准，这只是计划轨上占的格子。 */
 const val CHECKIN_DEFAULT_MINUTES = 30
 
@@ -19,6 +16,8 @@ const val CHECKIN_DEFAULT_MINUTES = 30
  *
  * [QuestEntity.parentQuestId] 在这里刻意不参与：任务挂的是支线自己，
  * 挂到父主线上会把支线的打卡记录混进主线的完成度里。
+ *
+ * 深夜打卡时结束时间照常越过零点（时间线按天切段画），不再截在当天末尾。
  */
 fun checkinTaskOf(
     quest: QuestEntity,
@@ -26,8 +25,7 @@ fun checkinTaskOf(
     nowMinute: Int,
     durationMinutes: Int = CHECKIN_DEFAULT_MINUTES,
 ): TaskEntity {
-    val endMinute = minOf(nowMinute + durationMinutes.coerceAtLeast(1), LAST_MINUTE_OF_DAY)
-        .coerceAtLeast(nowMinute + 1)
+    val endMinute = nowMinute + durationMinutes.coerceAtLeast(1)
     return TaskEntity(
         title = quest.title,
         epochDay = nowEpochDay,

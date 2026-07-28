@@ -123,6 +123,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun byId(id: Long): SessionEntity?
 
+    @Query("DELETE FROM sessions WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Insert
     suspend fun insert(session: SessionEntity): Long
 
@@ -150,6 +153,10 @@ interface LedgerDao {
      */
     @Query("SELECT COUNT(*) FROM ledger WHERE type = 'EARN_STREAK' AND refId = :epochDay")
     suspend fun checkinCount(epochDay: Long): Int
+
+    /** 撤回某次专注发出的任务奖励，删记录时用。 */
+    @Query("DELETE FROM ledger WHERE type = 'EARN_TASK' AND refId = :sessionId")
+    suspend fun deleteTaskEarning(sessionId: Long)
 
     @Insert
     suspend fun insert(entry: LedgerEntity): Long
