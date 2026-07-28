@@ -123,6 +123,10 @@ interface ShopDao {
     @Query("SELECT * FROM shop_items WHERE active = 1")
     suspend fun activeItems(): List<ShopItemEntity>
 
+    /** 含已下架的全部商品名，铺默认货架时按名去重用。 */
+    @Query("SELECT name FROM shop_items")
+    suspend fun allItemNames(): List<String>
+
     @Query("SELECT * FROM shop_items WHERE id = :id")
     suspend fun itemById(id: Long): ShopItemEntity?
 
