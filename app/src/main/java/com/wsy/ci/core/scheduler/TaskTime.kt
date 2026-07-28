@@ -1,9 +1,7 @@
 package com.wsy.ci.core.scheduler
 
 import com.wsy.ci.core.db.TaskEntity
-
-/** 当日最后一分钟。对齐到深夜时用它兜底，避免时间块跨到第二天。 */
-private const val LAST_MINUTE_OF_DAY = 24 * 60 - 1
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 
 /**
  * 把任务块对齐到「此刻」：日期换成 [nowEpochDay]、起点换成 [nowMinute]，时长保持不变。
@@ -12,16 +10,25 @@ private const val LAST_MINUTE_OF_DAY = 24 * 60 - 1
  * 允许与当天别的块重叠，计划轨会把重叠的块并排画出来（见 `TaskLanes`），
  * 所以这里不做任何避让。
  *
- * 深夜开始导致时长放不下时，结束时间截到当天末尾；起点已经是当天最后一分钟的
- * 极端情况下仍保证 endMinute > startMinute，不产出空区间。
+ * 深夜开工时结束时间会越过零点（endMinute 超过一天的分钟数），时间线按天切成两段画，
+ * 不再把时长硬截在当天末尾。
  */
 fun alignedToNow(task: TaskEntity, nowEpochDay: Long, nowMinute: Int): TaskEntity {
     val duration = (task.endMinute - task.startMinute).coerceAtLeast(1)
-    val endMinute = minOf(nowMinute + duration, LAST_MINUTE_OF_DAY)
-        .coerceAtLeast(nowMinute + 1)
     return task.copy(
         epochDay = nowEpochDay,
         startMinute = nowMinute,
-        endMinute = endMinute,
+        endMinute = nowMinute + duration,
     )
+}
+
+/**
+ * 把任务块的结束时间改成真正停下来的那一刻（[endEpochDay] 的 [endMinute]）。
+ *
+ * 用在结束专注的那一刻，计划轨于是反映真实的收工时间。跨零点收工时 endMinute
+ * 会超过一天的分钟数，交给时间线按天切段；再快也保证至少占住一分钟，不产出空区间。
+ */
+fun endedAt(task: TaskEntity, endEpochDay: Long, endMinute: Int): TaskEntity {
+    val relative = (endEpochDay - task.epochDay) * MINUTES_PER_DAY + endMinute
+    return task.copy(endMinute = relative.coerceAtLeast(task.startMinute + 1L).toInt())
 }

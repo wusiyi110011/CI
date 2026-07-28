@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +54,8 @@ import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
+import com.wsy.ci.core.timeline.DaySegments
+import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.feature.today.DayTimeline
 import com.wsy.ci.feature.today.TaskDetailDialog
@@ -82,16 +86,18 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         return date.with(DayOfWeek.MONDAY).toEpochDay()
     }
 
-    val dayTasks = selectedDay.flatMapLatest { db.taskDao().observeByDay(it) }
+    /** 各视图都多查前一天：跨零点的块属于前一天，但要在这天画出延续段。 */
+    val dayTasks = selectedDay.flatMapLatest { db.taskDao().observeByRange(it - 1, it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val daySessions = selectedDay.flatMapLatest {
-        db.sessionDao().observeByTimeRange(TimeFormat.dayStartMillis(it), TimeFormat.dayEndMillis(it))
+        db.sessionDao()
+            .observeByTimeRange(TimeFormat.dayStartMillis(it - 1), TimeFormat.dayEndMillis(it))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val weekTasks = selectedDay.flatMapLatest {
         val start = weekStart(it)
-        db.taskDao().observeByRange(start, start + 6)
+        db.taskDao().observeByRange(start - 1, start + 6)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 所选月份每日专注分钟（月热力图）。 */
@@ -147,16 +153,22 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-/** 周视图：每小时行高，19 行铺满 06:00–24:00。 */
+/** 周视图：每小时行高，整天 0:00–24:00 全铺，进屏滚到当前时刻。 */
 private val WEEK_HOUR_HEIGHT: Dp = 36.dp
-private const val WEEK_START_HOUR = 6
+private const val WEEK_START_HOUR = 0
 private const val WEEK_END_HOUR = 24
+
+/** 周视图自动滚动时，当前时刻上方预留的一段上下文高度。 */
+private val WEEK_SCROLL_LEAD_IN: Dp = 72.dp
 
 /** 周视图左侧时刻尺宽度，比日视图略窄以给 7 列腾空间。 */
 private val WEEK_RULER_WIDTH: Dp = 44.dp
 
 /** 周视图任务块最小高度。 */
 private val WEEK_MIN_BLOCK_HEIGHT: Dp = 30.dp
+
+/** 窗口末尾留白，保证末班车任务与末尾刻度不被容器裁掉。 */
+private val WEEK_BOTTOM_SLACK: Dp = WEEK_MIN_BLOCK_HEIGHT
 
 /** 月视图日历格高度。 */
 private val MONTH_CELL_HEIGHT: Dp = 104.dp
@@ -222,8 +234,13 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
 
         when (mode) {
             CalendarMode.DAY -> DayTimeline(
-                tasks = dayTasks,
-                actuals = sessionsToBlocks(daySessions, dayTasks, System.currentTimeMillis()),
+                segments = DaySegments.tasksOn(dayTasks, selectedDay),
+                actuals = sessionsToBlocks(
+                    sessions = daySessions,
+                    tasks = dayTasks,
+                    nowMillis = System.currentTimeMillis(),
+                    epochDay = selectedDay,
+                ),
                 onTaskClick = { detailTask = it },
                 nowMinute = nowMinuteIfToday(selectedDay),
                 showActualTrack = false,
@@ -264,7 +281,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             domains = domains,
             quests = quests,
             onSave = viewModel::saveTask,
-            onDelete = viewModel::deleteTask,
+            onDelete = if (task.id != 0L) viewModel::deleteTask else null,
             onDismiss = { editing = null },
             onCreateDomain = { _, _ -> },
         )
@@ -299,9 +316,27 @@ private fun WeekGrid(
     onTaskClick: (TaskEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val byDay = tasks.groupBy { it.epochDay }
+    // 每列按天切片，跨零点的块在两列各占一段
+    val segmentsByDay = (0..6).associate { index ->
+        val day = weekStartDay + index
+        day to DaySegments.tasksOn(tasks, day)
+    }
     val today = LocalDate.now().toEpochDay()
-    val totalHeight = WEEK_HOUR_HEIGHT * (WEEK_END_HOUR - WEEK_START_HOUR)
+    val totalHeight =
+        WEEK_HOUR_HEIGHT * (WEEK_END_HOUR - WEEK_START_HOUR) + WEEK_BOTTOM_SLACK
+
+    // 与日视图同一套规矩：首次测出滚动范围后把当前时刻带进视野，只滚一次
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    var didAutoScroll by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollState.maxValue) {
+        if (didAutoScroll || scrollState.maxValue == 0) return@LaunchedEffect
+        val now = java.time.LocalTime.now()
+        val y = WEEK_HOUR_HEIGHT * ((now.hour * 60 + now.minute - WEEK_START_HOUR * 60) / 60f)
+        val offsetPx = with(density) { (y - WEEK_SCROLL_LEAD_IN).toPx() }
+        scrollState.animateScrollTo(offsetPx.toInt().coerceIn(0, scrollState.maxValue))
+        didAutoScroll = true
+    }
 
     Column(
         modifier = modifier
@@ -337,7 +372,7 @@ private fun WeekGrid(
                 .height(1.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant)
         )
-        Box(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        Box(modifier = Modifier.verticalScroll(scrollState)) {
             Row(modifier = Modifier.height(totalHeight).fillMaxWidth()) {
                 WeekHourRuler()
                 for (index in 0..6) {
@@ -348,8 +383,11 @@ private fun WeekGrid(
                             .fillMaxHeight()
                             .leftEdge(MaterialTheme.colorScheme.outlineVariant)
                     ) {
-                        (byDay[day] ?: emptyList()).forEach { task ->
-                            WeekTaskBlock(task = task, onClick = { onTaskClick(task) })
+                        (segmentsByDay[day] ?: emptyList()).forEach { segment ->
+                            WeekTaskBlock(
+                                segment = segment,
+                                onClick = { onTaskClick(segment.task) },
+                            )
                         }
                     }
                 }
@@ -377,11 +415,11 @@ private fun WeekHourRuler() {
 }
 
 @Composable
-private fun WeekTaskBlock(task: TaskEntity, onClick: () -> Unit) {
-    val colors = CiTheme.colors.taskBlock(task.status)
+private fun WeekTaskBlock(segment: TaskSegment, onClick: () -> Unit) {
+    val colors = CiTheme.colors.taskBlock(segment.task.status)
     val minuteHeight = WEEK_HOUR_HEIGHT / 60f
-    val y = minuteHeight * (task.startMinute - WEEK_START_HOUR * 60).coerceAtLeast(0)
-    val height = (minuteHeight * (task.endMinute - task.startMinute))
+    val y = minuteHeight * (segment.startMinute - WEEK_START_HOUR * 60).coerceAtLeast(0)
+    val height = (minuteHeight * (segment.endMinute - segment.startMinute))
         .coerceAtLeast(WEEK_MIN_BLOCK_HEIGHT)
 
     Row(
@@ -401,15 +439,18 @@ private fun WeekTaskBlock(task: TaskEntity, onClick: () -> Unit) {
                 .fillMaxHeight()
                 .background(colors.accent)
         )
-        Text(
-            text = task.title,
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.content,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
-        )
+        // 跨零点延续过来的那一段只占位，标题在开工的那天已经写过了
+        if (!segment.isContinuation) {
+            Text(
+                text = segment.task.title,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.content,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+            )
+        }
     }
 }
 

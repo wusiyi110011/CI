@@ -45,10 +45,10 @@ class CheckinTaskTest {
     }
 
     @Test
-    fun `深夜打卡结束时间截到当天末尾不跨天`() {
+    fun `深夜打卡结束时间越过零点`() {
         val task = checkinTaskOf(sideQuest(), nowEpochDay = 20_300, nowMinute = 23 * 60 + 50)
 
-        assertEquals(24 * 60 - 1, task.endMinute)
+        assertEquals(24 * 60 + 20, task.endMinute)
         assertTrue(task.endMinute > task.startMinute)
     }
 
@@ -56,7 +56,6 @@ class CheckinTaskTest {
     fun `起点已是当天最后一分钟时仍产出非空区间`() {
         val task = checkinTaskOf(sideQuest(), nowEpochDay = 20_300, nowMinute = 24 * 60 - 1)
 
-        assertEquals(24 * 60, task.endMinute)
         assertTrue(task.endMinute > task.startMinute)
     }
 }

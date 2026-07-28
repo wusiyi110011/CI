@@ -12,6 +12,8 @@ import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.scheduler.RescheduleResult
+import com.wsy.ci.core.timeline.DaySegments
+import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
 import com.wsy.ci.llm.ParsedBlocker
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -34,12 +37,24 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val db = container.db
     private val today: Long = LocalDate.now().toEpochDay()
 
-    val tasks: StateFlow<List<TaskEntity>> = db.taskDao().observeByDay(today)
+    /**
+     * 今日时间线的素材。查询多带上昨天：跨零点的任务和专注属于昨天，
+     * 但今天要画出它们延续过来的那一段（切片交给 `DaySegments`）。
+     */
+    val tasks: StateFlow<List<TaskEntity>> = db.taskDao().observeByRange(today - 1, today)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val sessions: StateFlow<List<SessionEntity>> = db.sessionDao()
-        .observeByTimeRange(TimeFormat.dayStartMillis(today), TimeFormat.dayEndMillis(today))
+        .observeByTimeRange(TimeFormat.dayStartMillis(today - 1), TimeFormat.dayEndMillis(today))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 今日时间线上的计划片段（含昨天跨过来的尾巴）。 */
+    val segments: StateFlow<List<TaskSegment>> = tasks
+        .map { DaySegments.tasksOn(it, today) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 今天这一天，供 UI 切片实际轨。 */
+    val todayEpochDay: Long get() = today
 
     val runningSession: StateFlow<SessionEntity?> = db.sessionDao().observeOpenSession()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -96,6 +111,34 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTask(task: TaskEntity) {
         viewModelScope.launch {
             if (task.id == 0L) db.taskDao().insert(task) else db.taskDao().update(task)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /**
+     * 把一次自由专注补录成任务：新建任务并让 session 挂上去。
+     * 已经结算过的 CI 币和经验不重算——那是当时按实际投入发的，事后改名不该改账。
+     */
+    fun attachTaskToSession(task: TaskEntity, sessionId: Long) {
+        viewModelScope.launch {
+            val taskId = db.taskDao().insert(task)
+            db.sessionDao().byId(sessionId)?.let { session ->
+                db.sessionDao().update(
+                    session.copy(
+                        taskId = taskId,
+                        domainId = task.domainId ?: session.domainId,
+                        questId = task.questId ?: session.questId,
+                    )
+                )
+            }
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /** 删掉一次专注记录（连带撤回它发出的 CI 币与经验，见 `TimerRepository.deleteSession`）。 */
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch {
+            container.timerRepository.deleteSession(sessionId)
             CiWidgetUpdater.updateAll(getApplication())
         }
     }

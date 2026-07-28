@@ -35,17 +35,35 @@ class TaskTimeTest {
     }
 
     @Test
-    fun `深夜开工时结束时间截到当天末尾`() {
+    fun `深夜开工时结束时间越过零点而不是截在当天末尾`() {
         val aligned = alignedToNow(task, nowEpochDay = 20_663, nowMinute = 23 * 60 + 30)
 
         assertEquals(23 * 60 + 30, aligned.startMinute)
-        assertEquals(24 * 60 - 1, aligned.endMinute)
+        assertEquals(24 * 60 + 30, aligned.endMinute)
     }
 
     @Test
-    fun `起点已是当天最后一分钟也不产出空区间`() {
-        val aligned = alignedToNow(task, nowEpochDay = 20_663, nowMinute = 24 * 60 - 1)
+    fun `结束计时把终点换成收工时刻`() {
+        val running = task.copy(startMinute = 19 * 60, endMinute = 20 * 60)
+        val ended = endedAt(running, endEpochDay = task.epochDay, endMinute = 19 * 60 + 25)
 
-        assertTrue(aligned.endMinute > aligned.startMinute)
+        assertEquals(19 * 60, ended.startMinute)
+        assertEquals(19 * 60 + 25, ended.endMinute)
+    }
+
+    @Test
+    fun `跨零点收工时终点记成次日的分钟数`() {
+        val running = task.copy(startMinute = 23 * 60, endMinute = 24 * 60)
+        val ended = endedAt(running, endEpochDay = task.epochDay + 1, endMinute = 2 * 60)
+
+        assertEquals(26 * 60, ended.endMinute)
+    }
+
+    @Test
+    fun `秒开秒关也不产出空区间`() {
+        val running = task.copy(startMinute = 19 * 60, endMinute = 20 * 60)
+        val ended = endedAt(running, endEpochDay = task.epochDay, endMinute = 19 * 60)
+
+        assertTrue(ended.endMinute > ended.startMinute)
     }
 }

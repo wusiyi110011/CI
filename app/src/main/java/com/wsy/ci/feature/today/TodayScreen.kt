@@ -50,6 +50,7 @@ import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.economy.Difficulty
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -58,6 +59,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     val tasks by viewModel.tasks.collectAsState()
+    val segments by viewModel.segments.collectAsState()
     val sessions by viewModel.sessions.collectAsState()
     val running by viewModel.runningSession.collectAsState()
     val runningTask by viewModel.runningTask.collectAsState()
@@ -69,6 +71,8 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
     var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
+    /** 正在补录的自由专注：没有任务可点，就地给这段时间补一个。 */
+    var freeSession by remember { mutableStateOf<SessionEntity?>(null) }
     var showStopDialog by remember { mutableStateOf(false) }
 
     // 每秒刷新，驱动计时器与「当前时刻」指示线
@@ -108,15 +112,24 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             )
 
             DayTimeline(
-                tasks = tasks,
+                segments = segments,
                 // 计时中的任务补进查表范围：刚开始的那一瞬任务还没落到今日列表里
                 actuals = sessionsToBlocks(
                     sessions = sessions,
                     tasks = tasks + listOfNotNull(runningTask),
                     nowMillis = nowTick,
+                    epochDay = viewModel.todayEpochDay,
                     quests = quests,
                 ),
                 onTaskClick = { detailTask = it },
+                // 实际轨：挂了任务的点开任务卡，自由专注点开补录卡（给它补个名字就成了任务）
+                onActualClick = { block ->
+                    val session = sessions.firstOrNull { it.id == block.sessionId }
+                    val task = session?.taskId?.let { id ->
+                        (tasks + listOfNotNull(runningTask)).firstOrNull { it.id == id }
+                    }
+                    if (task != null) detailTask = task else freeSession = session
+                },
                 nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
                 modifier = Modifier.weight(1f),
             )
@@ -126,13 +139,14 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
         FloatingActionButton(
             onClick = {
+                // 起点取下一个整刻；跨过零点就落到明天的 00:xx，而不是把时间压回白天
                 val now = LocalTime.now()
-                val startMin = (now.hour * 60 + now.minute + 14) / 15 * 15
+                val rounded = (now.hour * 60 + now.minute + 14) / 15 * 15
                 editing = TaskEntity(
                     title = "",
-                    epochDay = LocalDate.now().toEpochDay(),
-                    startMinute = startMin.coerceAtMost(23 * 60),
-                    endMinute = (startMin + 60).coerceAtMost(24 * 60 - 1),
+                    epochDay = LocalDate.now().toEpochDay() + rounded / MINUTES_PER_DAY,
+                    startMinute = rounded % MINUTES_PER_DAY,
+                    endMinute = rounded % MINUTES_PER_DAY + 60,
                 )
             },
             shape = CiShapes.fab,
@@ -156,6 +170,19 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             onDelete = if (task.id != 0L) viewModel::deleteTask else null,
             onDismiss = { editing = null },
             onCreateDomain = viewModel::addDomain,
+        )
+    }
+
+    freeSession?.let { session ->
+        TaskEditorDialog(
+            initial = freeSessionDraft(session, nowTick),
+            domains = domains,
+            quests = quests,
+            onSave = { viewModel.attachTaskToSession(it, session.id) },
+            onDelete = { viewModel.deleteSession(session.id) },
+            onDismiss = { freeSession = null },
+            onCreateDomain = viewModel::addDomain,
+            deleteLabel = "删除这段记录",
         )
     }
 
@@ -185,6 +212,25 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     }
 
     NlDialogs(state = nlState, viewModel = viewModel)
+}
+
+/**
+ * 自由专注的补录草稿：时段取这次专注的真实起止，领域/任务线沿用 session 上记的。
+ * 状态直接给「已完成」——这段时间是真的投入过了，不是待办。
+ */
+private fun freeSessionDraft(session: SessionEntity, nowMillis: Long): TaskEntity {
+    val end = session.endAt ?: nowMillis
+    val minutes = ((end - session.startAt) / 60_000L).toInt().coerceAtLeast(1)
+    val startMinute = TimeFormat.millisToMinuteOfDay(session.startAt)
+    return TaskEntity(
+        title = "",
+        epochDay = TimeFormat.millisToEpochDay(session.startAt),
+        startMinute = startMinute,
+        endMinute = startMinute + minutes,
+        domainId = session.domainId,
+        questId = session.questId,
+        status = TaskStatus.DONE,
+    )
 }
 
 /** 进行中计时卡：领域 chip + 标题｜大号计时器｜结束按钮。 */

@@ -36,6 +36,8 @@ import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.economy.Difficulty
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
+import com.wsy.ci.core.util.TimeFormat
 
 /** 任务新建/编辑对话框。时间输入用 HH:mm 文本（平板键盘输入效率高于滚轮）。 */
 @Composable
@@ -47,6 +49,7 @@ fun TaskEditorDialog(
     onDelete: ((TaskEntity) -> Unit)?,
     onDismiss: () -> Unit,
     onCreateDomain: (String, (Long) -> Unit) -> Unit,
+    deleteLabel: String = "删除",
 ) {
     var title by remember { mutableStateOf(initial.title) }
     var date by remember { mutableStateOf(formatDate(initial.epochDay)) }
@@ -87,7 +90,7 @@ fun TaskEditorDialog(
                     )
                     CiFormField(
                         value = end, onValueChange = { end = it },
-                        label = "结束 HH:mm", singleLine = true,
+                        label = "结束 HH:mm（早于开始即次日）", singleLine = true,
                         modifier = Modifier.width(140.dp),
                     )
                 }
@@ -141,11 +144,13 @@ fun TaskEditorDialog(
                 if (title.isBlank()) { error = "任务名不能为空"; return@TextButton }
                 if (epochDay == null) { error = "日期格式应为 yyyy-MM-dd"; return@TextButton }
                 if (startMin == null || endMin == null) { error = "时间格式应为 HH:mm"; return@TextButton }
-                if (endMin <= startMin) { error = "结束时间必须晚于开始时间"; return@TextButton }
+                // 结束早于开始就是跨到次日：23:00–02:00 即一个三小时的深夜块
+                val endAcross = if (endMin < startMin) endMin + MINUTES_PER_DAY else endMin
+                if (endAcross == startMin) { error = "结束时间不能与开始时间相同"; return@TextButton }
                 val build: (Long?) -> TaskEntity = { did ->
                     initial.copy(
                         title = title.trim(), epochDay = epochDay,
-                        startMinute = startMin, endMinute = endMin,
+                        startMinute = startMin, endMinute = endAcross,
                         difficulty = difficulty, domainId = did, questId = questId, locked = locked,
                         note = note.trim(),
                     )
@@ -160,8 +165,9 @@ fun TaskEditorDialog(
         },
         dismissButton = {
             Row {
-                if (onDelete != null && initial.id != 0L) {
-                    TextButton(onClick = { onDelete(initial); onDismiss() }) { Text("删除") }
+                // 删不删由调用方给不给 onDelete 决定：自由专注补录卡删的是那段记录，任务还没建出来
+                if (onDelete != null) {
+                    TextButton(onClick = { onDelete(initial); onDismiss() }) { Text(deleteLabel) }
                 }
                 TextButton(onClick = onDismiss) { Text("取消") }
             }
@@ -231,7 +237,8 @@ private fun QuestPicker(
     }
 }
 
-private fun formatMinute(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
+/** 跨天的结束时间写成「次日 02:00」，[parseMinute] 认得这个前缀。 */
+private fun formatMinute(minute: Int): String = TimeFormat.minuteOfDay(minute)
 
 private fun formatDate(epochDay: Long): String = java.time.LocalDate.ofEpochDay(epochDay).toString()
 
@@ -242,11 +249,20 @@ private fun parseDate(text: String): Long? = try {
     null
 }
 
+/**
+ * HH:mm → 当日分钟数。带「次日」前缀（[formatMinute] 的输出）时加上一天，
+ * 跨零点的时间块因此可以照常编辑、保存。
+ */
 private fun parseMinute(text: String): Int? {
-    val parts = text.trim().split(":", "：", ".")
+    val trimmed = text.trim()
+    val nextDay = trimmed.startsWith(NEXT_DAY_PREFIX)
+    val clock = if (nextDay) trimmed.removePrefix(NEXT_DAY_PREFIX).trim() else trimmed
+    val parts = clock.split(":", "：", ".")
     if (parts.size != 2) return null
     val h = parts[0].toIntOrNull() ?: return null
     val m = parts[1].toIntOrNull() ?: return null
     if (h !in 0..23 || m !in 0..59) return null
-    return h * 60 + m
+    return h * 60 + m + if (nextDay) MINUTES_PER_DAY else 0
 }
+
+private const val NEXT_DAY_PREFIX = "次日"

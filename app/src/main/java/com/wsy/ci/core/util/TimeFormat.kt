@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -12,7 +13,20 @@ object TimeFormat {
     private val shortDateFmt = DateTimeFormatter.ofPattern("M/d", Locale.CHINA)
     private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
-    fun minuteOfDay(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
+    /**
+     * 当日分钟数 → 时刻文案。跨天的时间块 minute 会超过一天（23:00 起的三小时任务
+     * 结束在 26:00），这时补上「次日」前缀，读起来才是 02:00 而不是 26:00。
+     */
+    fun minuteOfDay(minute: Int): String {
+        val days = Math.floorDiv(minute, MINUTES_PER_DAY)
+        val inDay = Math.floorMod(minute, MINUTES_PER_DAY)
+        val clock = "%02d:%02d".format(inDay / 60, inDay % 60)
+        return when (days) {
+            0 -> clock
+            1 -> "次日 $clock"
+            else -> "${days}天后 $clock"
+        }
+    }
 
     fun date(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFmt)
 

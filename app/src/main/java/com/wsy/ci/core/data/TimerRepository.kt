@@ -10,6 +10,7 @@ import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.scheduler.alignedToNow
+import com.wsy.ci.core.scheduler.endedAt
 import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -93,7 +94,15 @@ class TimerRepository(private val db: CiDatabase) {
         val trimmedNote = note.trim()
         task?.let {
             val done = if (focus == FocusOutcome.ABANDONED) TaskStatus.PLANNED else TaskStatus.DONE
-            db.taskDao().update(it.copy(status = done, note = appendNote(it.note, trimmedNote)))
+            // 计划轨记真实收工时刻：开工时已对齐到此刻，收工时把终点也收到此刻
+            val ended = endedAt(
+                task = it,
+                endEpochDay = TimeFormat.millisToEpochDay(now),
+                endMinute = TimeFormat.millisToMinuteOfDay(now),
+            )
+            db.taskDao().update(
+                ended.copy(status = done, note = appendNote(it.note, trimmedNote))
+            )
         }
         if (reward > 0) {
             db.ledgerDao().insert(
@@ -117,6 +126,21 @@ class TimerRepository(private val db: CiDatabase) {
             checkinStreak = checkinStreak,
             checkinRewardCi = checkinReward,
         )
+    }
+
+    /**
+     * 删掉一次专注记录，并把它当初发出的 CI 币和领域经验一并撤回，账才对得上。
+     *
+     * 打卡奖不退：那是按「那天有没有专注」发的一次性奖励，跟着单条记录退会把
+     * 连续打卡的判定搅乱。任务本身也不动——它是计划轨上的块，跟这条记录是两回事。
+     */
+    suspend fun deleteSession(sessionId: Long) {
+        val session = db.sessionDao().byId(sessionId) ?: return
+        db.ledgerDao().deleteTaskEarning(sessionId)
+        session.domainId?.takeIf { session.expGained > 0 }?.let { domainId ->
+            db.domainDao().addExp(domainId, -session.expGained)
+        }
+        db.sessionDao().deleteById(sessionId)
     }
 
     /**
