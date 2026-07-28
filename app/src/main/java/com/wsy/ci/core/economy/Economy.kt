@@ -65,6 +65,46 @@ object Economy {
         return floor(base * (1 + streakBonus(streakDays))).toLong()
     }
 
+    private const val CHECKIN_TIER1_DAYS = 3
+    private const val CHECKIN_TIER2_DAYS = 7
+    private const val CHECKIN_TIER3_DAYS = 14
+    private const val CHECKIN_BASE_CI = 20L
+    private const val CHECKIN_TIER1_CI = 40L
+    private const val CHECKIN_TIER2_CI = 80L
+    private const val CHECKIN_TIER3_CI = 150L
+
+    /**
+     * 每日打卡奖励：当天首次完成专注时发一笔定额，连续天数越长单笔越高。
+     * 1–2 天 20、3–6 天 40、7–13 天 80、14 天及以上 150。
+     *
+     * 与 [streakBonus] 是两套独立机制：那个按比例加成单次任务收益、只对支线生效；
+     * 这个是全局每日定额，跟任务挂不挂支线无关。
+     */
+    fun checkinReward(streakDays: Int): Long = when {
+        streakDays >= CHECKIN_TIER3_DAYS -> CHECKIN_TIER3_CI
+        streakDays >= CHECKIN_TIER2_DAYS -> CHECKIN_TIER2_CI
+        streakDays >= CHECKIN_TIER1_DAYS -> CHECKIN_TIER1_CI
+        streakDays >= 1 -> CHECKIN_BASE_CI
+        else -> 0
+    }
+
+    /**
+     * 截至 [today] 的连续打卡天数，从有专注记录的日期集合往前逐日数。
+     *
+     * [today] 当天没有记录直接返回 0——打卡的语义是「今天来过」，不是「昨天来过」。
+     * 漏一天即断，严格清零，不设补签。
+     */
+    fun checkinStreak(daysWithFocus: Set<Long>, today: Long): Int {
+        if (today !in daysWithFocus) return 0
+        var count = 0
+        var day = today
+        while (day in daysWithFocus) {
+            count++
+            day--
+        }
+        return count
+    }
+
     /** 领域经验 = 实际专注分钟 × 难度系数（经验只增不减，与 CI 币双轨）。 */
     fun expGain(actualMinutes: Int, difficulty: Difficulty): Long {
         if (actualMinutes <= 0) return 0
