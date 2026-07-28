@@ -92,7 +92,11 @@ private fun CiRoot() {
     }
 }
 
-/** 左侧导航：88dp 宽、扁平（elevation 0）、右缘 1dp 分割线，选中项金铜容器 + 圆角 16。 */
+/**
+ * 左侧导航：88dp 宽、扁平（elevation 0）、右缘 1dp 分割线，选中项金铜容器 + 圆角 16。
+ * 6 项整组垂直居中：横屏平板栏高远大于内容高（6×64 + 5×10 = 434dp），
+ * 顶部对齐会在下方留一大片空白。
+ */
 @Composable
 private fun CiNavigationRail(selected: Destination, onSelect: (Destination) -> Unit) {
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
@@ -104,7 +108,7 @@ private fun CiNavigationRail(selected: Destination, onSelect: (Destination) -> U
             .rightEdge(edgeColor)
             .padding(vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
     ) {
         Destination.entries.forEach { destination ->
             NavRailItem(
