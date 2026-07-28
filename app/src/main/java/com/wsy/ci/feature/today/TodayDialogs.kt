@@ -25,6 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -37,6 +40,7 @@ import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiElevation
+import com.wsy.ci.core.designsystem.CiFormField
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
@@ -205,8 +209,13 @@ internal fun TaskDetailDialog(
     }
 }
 
+/**
+ * 结束专注：先填可选的完成描述，再点专注结果按钮落库。
+ * 描述会追加到任务备注里（自由专注则落到流水备注），点结果按钮即视为提交。
+ */
 @Composable
-internal fun StopFocusDialog(onPick: (FocusOutcome) -> Unit, onDismiss: () -> Unit) {
+internal fun StopFocusDialog(onPick: (FocusOutcome, String) -> Unit, onDismiss: () -> Unit) {
+    var note by remember { mutableStateOf("") }
     CiFormDialog(
         title = "这次专注的结果？",
         onDismiss = onDismiss,
@@ -214,9 +223,17 @@ internal fun StopFocusDialog(onPick: (FocusOutcome) -> Unit, onDismiss: () -> Un
         onConfirm = null,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            CiFormField(
+                value = note,
+                onValueChange = { note = it },
+                label = "这次做了什么？（可选）",
+                singleLine = false,
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
             FocusOutcome.entries.forEach { outcome ->
                 Button(
-                    onClick = { onPick(outcome) },
+                    onClick = { onPick(outcome, note) },
                     shape = CiShapes.pill,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

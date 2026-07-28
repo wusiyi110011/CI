@@ -164,8 +164,8 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
     if (showStopDialog) {
         StopFocusDialog(
-            onPick = { focus ->
-                viewModel.stopTimer(focus)
+            onPick = { focus, note ->
+                viewModel.stopTimer(focus, note)
                 showStopDialog = false
             },
             onDismiss = { showStopDialog = false },

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.db.LedgerType
 import com.wsy.ci.core.db.SessionEntity
+import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
@@ -20,6 +21,42 @@ import kotlinx.coroutines.launch
 enum class StatsPeriod(val label: String) { WEEK("本周"), MONTH("本月") }
 
 data class DomainStat(val name: String, val minutes: Int, val colorArgb: Long)
+
+/**
+ * 明细列表的一行：任务本体 + 它名下所有 session 汇总出的实际投入与结算产出。
+ * 一个任务可能被专注多次（选「放弃」会退回 PLANNED 可重开），所以是求和不是取单条。
+ */
+data class TaskRecord(
+    val task: TaskEntity,
+    val domainName: String,
+    val actualMinutes: Int,
+    val rewardCi: Long,
+    val expGained: Long,
+)
+
+/** 明细列表的状态筛选。RUNNING 归到「未完成」，用户视角里它确实还没完成。 */
+enum class RecordFilter(val label: String) {
+    ALL("全部"),
+    DONE("已完成"),
+    SKIPPED("已跳过"),
+    OPEN("未完成");
+
+    fun matches(status: TaskStatus): Boolean = when (this) {
+        ALL -> true
+        DONE -> status == TaskStatus.DONE
+        SKIPPED -> status == TaskStatus.SKIPPED
+        OPEN -> status == TaskStatus.PLANNED || status == TaskStatus.RUNNING
+    }
+}
+
+/**
+ * 明细列表的领域筛选。不能直接用 `Long?` 表达——null 已经被「未分类任务」占用了，
+ * 再拿它兼表「全部」会撞车，所以显式分成两个分支。
+ */
+sealed interface DomainFilter {
+    data object All : DomainFilter
+    data class Only(val domainId: Long?) : DomainFilter
+}
 
 data class StatsData(
     val fromDay: Long,
@@ -37,6 +74,8 @@ data class StatsData(
     val spentCi: Long = 0,
     /** 每日专注分钟（打卡格 + 月热力图数据源）。 */
     val minutesByDay: Map<Long, Int> = emptyMap(),
+    /** 周期内全部任务明细，未经筛选；筛选是纯函数，在 UI 层按当前条件过。 */
+    val records: List<TaskRecord> = emptyList(),
 ) {
     val completionRate: Float
         get() = if (plannedCount == 0) 0f else doneCount.toFloat() / plannedCount
@@ -53,6 +92,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     private val db = container.db
 
     val period = MutableStateFlow(StatsPeriod.WEEK)
+    /** 默认落在「已完成」——这个面板的主用途就是回看做完的事。 */
+    val recordFilter = MutableStateFlow(RecordFilter.DONE)
+    val domainFilter = MutableStateFlow<DomainFilter>(DomainFilter.All)
     val data = MutableStateFlow<StatsData?>(null)
     val analysis = MutableStateFlow<String?>(null)
     val analyzing = MutableStateFlow(false)
@@ -65,7 +107,17 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     fun setPeriod(p: StatsPeriod) {
         period.value = p
         analysis.value = null
+        // 换周期后原来选中的领域可能在新周期里没有任何任务，重置回「全部」免得列表空得莫名其妙
+        domainFilter.value = DomainFilter.All
         refresh()
+    }
+
+    fun setRecordFilter(f: RecordFilter) {
+        recordFilter.value = f
+    }
+
+    fun setDomainFilter(f: DomainFilter) {
+        domainFilter.value = f
     }
 
     fun refresh() {
@@ -119,6 +171,22 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             minutesByDay[day] = (minutesByDay[day] ?: 0) + minutesOf(s)
         }
 
+        val sessionsByTask = sessions.groupBy { it.taskId }
+        val records = tasks
+            .sortedWith(
+                compareByDescending<TaskEntity> { it.epochDay }.thenByDescending { it.startMinute }
+            )
+            .map { task ->
+                val own = sessionsByTask[task.id].orEmpty()
+                TaskRecord(
+                    task = task,
+                    domainName = task.domainId?.let { domainName[it]?.name } ?: "未分类",
+                    actualMinutes = own.sumOf(minutesOf),
+                    rewardCi = own.sumOf { it.rewardCi },
+                    expGained = own.sumOf { it.expGained },
+                )
+            }
+
         return StatsData(
             fromDay = fromDay,
             toDay = toDay,
@@ -133,6 +201,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             earnedCi = ledger.filter { it.amount > 0 }.sumOf { it.amount },
             spentCi = -ledger.filter { it.amount < 0 && it.type == LedgerType.SPEND_SHOP }.sumOf { it.amount },
             minutesByDay = minutesByDay,
+            records = records,
         )
     }
 

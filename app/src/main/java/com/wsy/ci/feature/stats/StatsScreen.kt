@@ -61,6 +61,8 @@ private const val CHECKIN_COLUMNS = 10
 @Composable
 fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
     val period by viewModel.period.collectAsState()
+    val recordFilter by viewModel.recordFilter.collectAsState()
+    val domainFilter by viewModel.domainFilter.collectAsState()
     val data by viewModel.data.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
     val analyzing by viewModel.analyzing.collectAsState()
@@ -115,6 +117,14 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                         CheckinPanel(d, Modifier.weight(1f).height(HEAT_PANEL_HEIGHT))
                     }
                     EconomyPanel(d, Modifier.fillMaxWidth().height(ECONOMY_PANEL_HEIGHT))
+                    TaskRecordsPanel(
+                        records = d.records,
+                        statusFilter = recordFilter,
+                        domainFilter = domainFilter,
+                        onStatusFilter = viewModel::setRecordFilter,
+                        onDomainFilter = viewModel::setDomainFilter,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                         Button(
                             onClick = viewModel::analyze,
