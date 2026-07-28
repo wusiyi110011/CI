@@ -44,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
@@ -53,8 +54,11 @@ import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.feature.today.DayTimeline
+import com.wsy.ci.feature.today.TaskDetailDialog
 import com.wsy.ci.feature.today.TaskEditorDialog
 import com.wsy.ci.feature.today.sessionsToBlocks
+import com.wsy.ci.widget.CiWidgetUpdater
+import com.wsy.ci.widget.TimerService
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -105,6 +109,10 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     val quests = db.questDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** 有进行中的专注时不允许再开一个，任务详情里据此禁用「开始专注」。 */
+    val runningSession = db.sessionDao().observeOpenSession()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     fun shift(days: Long) { selectedDay.value += days }
 
     fun shiftMonth(delta: Long) {
@@ -119,7 +127,23 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteTask(task: TaskEntity) {
-        viewModelScope.launch { db.taskDao().delete(task) }
+        viewModelScope.launch {
+            db.taskDao().delete(task)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    fun skipTask(task: TaskEntity) {
+        viewModelScope.launch {
+            db.taskDao().update(task.copy(status = TaskStatus.SKIPPED))
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /** 从日程屏直接开始某个任务的专注（不限当天，提前开工也允许）。 */
+    fun startTimer(task: TaskEntity) {
+        TimerService.start(getApplication(), task.id, task.title)
+        viewModelScope.launch { CiWidgetUpdater.updateAll(getApplication()) }
     }
 }
 
@@ -151,9 +175,11 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
     val monthSessions by viewModel.monthMinutes.collectAsState()
     val domains by viewModel.domains.collectAsState()
     val quests by viewModel.quests.collectAsState()
+    val running by viewModel.runningSession.collectAsState()
 
     var mode by remember { mutableStateOf(CalendarMode.DAY) }
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
+    var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(CiSpacing.lg),
@@ -198,7 +224,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             CalendarMode.DAY -> DayTimeline(
                 tasks = dayTasks,
                 actuals = sessionsToBlocks(daySessions, dayTasks, System.currentTimeMillis()),
-                onTaskClick = { editing = it },
+                onTaskClick = { detailTask = it },
                 nowMinute = nowMinuteIfToday(selectedDay),
                 showActualTrack = false,
                 modifier = Modifier.weight(1f),
@@ -206,7 +232,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             CalendarMode.WEEK -> WeekGrid(
                 weekStartDay = LocalDate.ofEpochDay(selectedDay).with(DayOfWeek.MONDAY).toEpochDay(),
                 tasks = weekTasks,
-                onTaskClick = { editing = it },
+                onTaskClick = { detailTask = it },
                 modifier = Modifier.weight(1f),
             )
             CalendarMode.MONTH -> MonthHeatmap(
@@ -219,6 +245,17 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+
+    detailTask?.let { task ->
+        TaskDetailDialog(
+            task = task,
+            isTimerRunning = running != null,
+            onStart = { viewModel.startTimer(task); detailTask = null },
+            onEdit = { editing = task; detailTask = null },
+            onSkip = { viewModel.skipTask(task); detailTask = null },
+            onDismiss = { detailTask = null },
+        )
     }
 
     editing?.let { task ->

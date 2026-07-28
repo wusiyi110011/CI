@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,8 +60,10 @@ private enum class Destination(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val appSettings = (application as CiApp).container.appSettings
         setContent {
-            CiTheme {
+            val themeMode by appSettings.themeMode.collectAsState()
+            CiTheme(darkTheme = themeMode.isDark(isSystemInDarkTheme())) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface,
@@ -83,7 +87,10 @@ private fun CiRoot() {
             when (destination) {
                 Destination.TODAY -> TodayScreen()
                 Destination.CALENDAR -> CalendarScreen()
-                Destination.QUEST -> QuestScreen()
+                // 从任务线里开始专注后直接切到今日屏，那里才有计时卡
+                Destination.QUEST -> QuestScreen(
+                    onNavigateToToday = { destination = Destination.TODAY },
+                )
                 Destination.SHOP -> ShopScreen()
                 Destination.STATS -> StatsScreen()
                 Destination.SETTINGS -> SettingsScreen()

@@ -142,15 +142,6 @@ object CiImport {
     fun parseDifficulty(text: String): Difficulty? =
         Difficulty.entries.firstOrNull { it.name == text.trim().uppercase() }
 
-    /** 容忍外部 AI 输出里的 markdown 围栏与前后闲话。 */
-    private fun extractJsonObject(raw: String): String {
-        val fenced = Regex("```(?:json)?\\s*([\\s\\S]*?)```").find(raw)?.groupValues?.get(1)
-        val candidate = (fenced ?: raw).trim()
-        val start = candidate.indexOf('{')
-        val end = candidate.lastIndexOf('}')
-        return if (start in 0 until end) candidate.substring(start, end + 1) else candidate
-    }
-
     /** 给外部 AI 的模板：所有字段齐全的最小示例，可直接改内容后导入。 */
     val TEMPLATE = """
 请按下面的 JSON 格式帮我设计学习计划，只输出 JSON：

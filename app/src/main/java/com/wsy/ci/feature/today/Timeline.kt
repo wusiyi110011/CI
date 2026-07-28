@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
@@ -48,6 +51,8 @@ import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.designsystem.TaskBlockColors
+import com.wsy.ci.core.timeline.Span
+import com.wsy.ci.core.timeline.TaskLanes
 import com.wsy.ci.core.util.TimeFormat
 
 /** 时间线上的一个实际记录块（由 session 换算而来）。 */
@@ -127,10 +132,18 @@ fun DayTimeline(
                     weight = if (showActualTrack) PLAN_TRACK_WEIGHT else 1f,
                     dashedLeftEdge = true,
                 ) {
-                    tasks.forEach { task ->
+                    // 时段重叠的任务并排画，互不遮挡；不重叠时照旧独占整轨
+                    val lanes = remember(tasks) {
+                        TaskLanes.assign(tasks.map { Span(it.startMinute, it.endMinute) })
+                    }
+                    val trackWidth = maxWidth
+                    tasks.forEachIndexed { index, task ->
+                        val lane = lanes[index]
                         PlannedBlock(
                             task = task,
+                            x = trackWidth * lane.lane / lane.laneCount,
                             y = yOf(task.startMinute),
+                            width = trackWidth / lane.laneCount,
                             height = heightOf(task.startMinute, task.endMinute),
                             onClick = { onTaskClick(task) },
                         )
@@ -210,20 +223,22 @@ private fun HourRuler(startHour: Int, endHour: Int) {
 /**
  * 一条轨道。[dashedLeftEdge] 为 true 时在左缘画虚线，对应设计稿的
  * `border-left: 1px dashed`（Compose 无 dashed border，用 dashed path effect 画）。
+ *
+ * 用 `BoxWithConstraints` 是为了让内容拿得到轨宽——计划轨要按重叠分栏切宽度。
  */
 @Composable
 private fun RowScope.TrackColumn(
     weight: Float,
     dashedLeftEdge: Boolean,
-    content: @Composable () -> Unit,
+    content: @Composable BoxWithConstraintsScope.() -> Unit,
 ) {
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .weight(weight)
             .fillMaxHeight()
             .then(if (dashedLeftEdge) Modifier.dashedLeftEdge(edgeColor) else Modifier),
-        content = { content() },
+        content = content,
     )
 }
 
@@ -272,11 +287,20 @@ private fun CurrentTimeLine(minute: Int, y: Dp) {
 }
 
 @Composable
-private fun PlannedBlock(task: TaskEntity, y: Dp, height: Dp, onClick: () -> Unit) {
+private fun PlannedBlock(
+    task: TaskEntity,
+    x: Dp,
+    y: Dp,
+    width: Dp,
+    height: Dp,
+    onClick: () -> Unit,
+) {
     val colors = CiTheme.colors.taskBlock(task.status)
     TaskBlock(
         colors = colors,
+        x = x,
         y = y,
+        width = width,
         height = height,
         title = (if (task.locked && task.status == TaskStatus.PLANNED) "🔒 " else "") + task.title,
         caption = "${TimeFormat.minuteOfDay(task.startMinute)}–${TimeFormat.minuteOfDay(task.endMinute)}" +
@@ -303,7 +327,10 @@ private fun ActualBlockView(block: ActualBlock, y: Dp, height: Dp) {
     )
 }
 
-/** 任务块通用外观：圆角 8、左侧 3dp 强调条、标题 + 副标题。 */
+/**
+ * 任务块通用外观：圆角 8、左侧 3dp 强调条、标题 + 副标题。
+ * [width] 为 null 时占满整轨（实际轨不分栏）。
+ */
 @Composable
 private fun TaskBlock(
     colors: TaskBlockColors,
@@ -311,13 +338,15 @@ private fun TaskBlock(
     height: Dp,
     title: String,
     caption: String,
+    x: Dp = 0.dp,
+    width: Dp? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = Modifier
-            .offset(y = y)
+            .offset(x = x, y = y)
             .height(height)
-            .fillMaxWidth()
+            .then(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
             .padding(horizontal = CiSpacing.xs)
             .alpha(colors.alpha)
             .clip(CiShapes.taskBlock)
@@ -353,16 +382,22 @@ private fun TaskBlock(
     }
 }
 
-/** sessions → 时间线块。[tasks] 用于回填标题，无关联任务时记为「自由专注」。 */
+/**
+ * sessions → 时间线块。标题按「具体任务 → 任务线 → 自由专注」依次回填：
+ * 支线打卡不挂任务，只有 questId，落到任务线名上才不会一片「自由专注」。
+ */
 fun sessionsToBlocks(
     sessions: List<SessionEntity>,
     tasks: List<TaskEntity>,
     nowMillis: Long,
+    quests: List<QuestEntity> = emptyList(),
 ): List<ActualBlock> = sessions.map { session ->
     val startMinute = TimeFormat.millisToMinuteOfDay(session.startAt)
     val end = session.endAt ?: nowMillis
+    val task = tasks.firstOrNull { it.id == session.taskId }
+    val quest = quests.firstOrNull { it.id == (task?.questId ?: session.questId) }
     ActualBlock(
-        title = tasks.firstOrNull { it.id == session.taskId }?.title ?: "自由专注",
+        title = task?.title ?: quest?.title ?: "自由专注",
         startMinute = startMinute,
         endMinute = TimeFormat.millisToMinuteOfDay(end).coerceAtLeast(startMinute + 1),
         running = session.endAt == null,

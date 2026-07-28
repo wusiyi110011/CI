@@ -34,10 +34,12 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
+/** [mains] 是可供支线挂靠的主线列表（进行中的 + 当前已选中的那条）。 */
 @Composable
 fun QuestEditorDialog(
     initial: QuestEntity,
     domains: List<DomainEntity>,
+    mains: List<QuestEntity>,
     onSave: (QuestEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -45,6 +47,7 @@ fun QuestEditorDialog(
     var description by remember { mutableStateOf(initial.description) }
     var type by remember { mutableStateOf(initial.type) }
     var domainId by remember { mutableStateOf(initial.domainId) }
+    var parentQuestId by remember { mutableStateOf(initial.parentQuestId) }
     var deadline by remember {
         mutableStateOf(initial.deadlineEpochDay?.let { LocalDate.ofEpochDay(it).toString() } ?: "")
     }
@@ -83,6 +86,13 @@ fun QuestEditorDialog(
                     singleLine = false,
                 )
                 DomainDropdown(domains, domainId) { domainId = it }
+                if (type == QuestType.SIDE) {
+                    ParentMainDropdown(
+                        mains = mains.filter { it.id != initial.id },
+                        selected = parentQuestId,
+                        onSelect = { parentQuestId = it },
+                    )
+                }
                 if (type == QuestType.MAIN) {
                     CiFormField(
                         value = deadline, onValueChange = { deadline = it },
@@ -110,6 +120,8 @@ fun QuestEditorDialog(
                         description = description.trim(),
                         type = type,
                         domainId = domainId,
+                        // 归属主线只对支线有意义，改回主线时顺手清掉，避免留下无效引用
+                        parentQuestId = parentQuestId.takeIf { type == QuestType.SIDE },
                         deadlineEpochDay = deadlineDay,
                     )
                 )
@@ -118,6 +130,38 @@ fun QuestEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+/** 支线归属的主线：可以不选，「每天一小时英语」不必非得挂在哪条大目标下面。 */
+@Composable
+private fun ParentMainDropdown(
+    mains: List<QuestEntity>,
+    selected: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = mains.firstOrNull { it.id == selected }?.title ?: "（不挂主线，独立支线）"
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        CiFormField(
+            value = selectedName, onValueChange = {}, readOnly = true,
+            label = "归属主线（可选）",
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            singleLine = false,
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("（不挂主线，独立支线）") },
+                onClick = { onSelect(null); expanded = false },
+            )
+            mains.forEach { main ->
+                DropdownMenuItem(
+                    text = { Text("🗡 ${main.title}") },
+                    onClick = { onSelect(main.id); expanded = false },
+                )
+            }
+        }
+    }
 }
 
 @Composable

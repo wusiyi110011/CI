@@ -9,6 +9,7 @@ import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
+import com.wsy.ci.core.scheduler.alignedToNow
 import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -39,17 +40,33 @@ class TimerRepository(private val db: CiDatabase) {
 
     fun observeRunningSession() = db.sessionDao().observeOpenSession()
 
-    /** 开始计时。若已有进行中的 session 则直接返回它（幂等）。 */
-    suspend fun startSession(taskId: Long?): SessionEntity {
+    /**
+     * 开始计时。若已有进行中的 session 则直接返回它（幂等）。
+     *
+     * 关联了任务时，把任务块对齐到此刻（见 [alignedToNow]）：从任务线详情或日程屏
+     * 提前开工的任务会连日期一起搬到今天，计划轨于是反映真实开工时间。
+     */
+    suspend fun startSession(taskId: Long?, questId: Long? = null): SessionEntity {
         db.sessionDao().openSession()?.let { return it }
+        val now = System.currentTimeMillis()
         val task = taskId?.let { db.taskDao().byId(it) }
+        // 没有具体任务时（对着支线直接打卡），领域从任务线上取
+        val quest = (task?.questId ?: questId)?.let { db.questDao().byId(it) }
         val session = SessionEntity(
             taskId = task?.id,
-            domainId = task?.domainId,
-            startAt = System.currentTimeMillis(),
+            domainId = task?.domainId ?: quest?.domainId,
+            questId = quest?.id,
+            startAt = now,
         )
         val id = db.sessionDao().insert(session)
-        task?.let { db.taskDao().update(it.copy(status = TaskStatus.RUNNING)) }
+        task?.let {
+            val aligned = alignedToNow(
+                task = it,
+                nowEpochDay = TimeFormat.millisToEpochDay(now),
+                nowMinute = TimeFormat.millisToMinuteOfDay(now),
+            )
+            db.taskDao().update(aligned.copy(status = TaskStatus.RUNNING))
+        }
         return session.copy(id = id)
     }
 
@@ -65,7 +82,8 @@ class TimerRepository(private val db: CiDatabase) {
         val task = session.taskId?.let { db.taskDao().byId(it) }
         val difficulty = task?.difficulty ?: Difficulty.NORMAL
 
-        val streakDays = updateStreakAndGet(task?.questId, focus)
+        // 有任务以任务的归属为准，没有任务就用 session 上记的任务线（支线直接打卡）
+        val streakDays = updateStreakAndGet(task?.questId ?: session.questId, focus)
         val reward = Economy.taskReward(minutes, difficulty, focus, streakDays)
         val exp = Economy.expGain(minutes, difficulty)
 

@@ -36,6 +36,7 @@ import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiBalanceChip
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDifficultyChip
@@ -59,6 +60,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     val tasks by viewModel.tasks.collectAsState()
     val sessions by viewModel.sessions.collectAsState()
     val running by viewModel.runningSession.collectAsState()
+    val runningTask by viewModel.runningTask.collectAsState()
     val domains by viewModel.domains.collectAsState()
     val quests by viewModel.quests.collectAsState()
     val balance by viewModel.balance.collectAsState()
@@ -92,7 +94,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             running?.let { session ->
                 RunningCard(
                     session = session,
-                    tasks = tasks,
+                    task = runningTask,
                     quests = quests,
                     domains = domains,
                     elapsedMillis = nowTick - session.startAt,
@@ -107,7 +109,13 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
             DayTimeline(
                 tasks = tasks,
-                actuals = sessionsToBlocks(sessions, tasks, nowTick),
+                // 计时中的任务补进查表范围：刚开始的那一瞬任务还没落到今日列表里
+                actuals = sessionsToBlocks(
+                    sessions = sessions,
+                    tasks = tasks + listOfNotNull(runningTask),
+                    nowMillis = nowTick,
+                    quests = quests,
+                ),
                 onTaskClick = { detailTask = it },
                 nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
                 modifier = Modifier.weight(1f),
@@ -183,14 +191,14 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 @Composable
 private fun RunningCard(
     session: SessionEntity,
-    tasks: List<TaskEntity>,
+    task: TaskEntity?,
     quests: List<QuestEntity>,
     domains: List<DomainEntity>,
     elapsedMillis: Long,
     onStop: () -> Unit,
 ) {
-    val task = tasks.firstOrNull { it.id == session.taskId }
-    val quest = quests.firstOrNull { it.id == task?.questId }
+    // 没有具体任务时（对着支线直接打卡），任务线从 session 上取
+    val quest = quests.firstOrNull { it.id == (task?.questId ?: session.questId) }
     val domain = domains.firstOrNull { it.id == (task?.domainId ?: session.domainId) }
 
     CiPanelCard(
@@ -207,13 +215,13 @@ private fun RunningCard(
                 verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
             ) {
                 CiChip(
-                    text = focusScopeLabel(quest, domain),
+                    text = focusScopeLabel(quest, domain, task),
                     container = MaterialTheme.colorScheme.tertiaryContainer,
                     content = MaterialTheme.colorScheme.onTertiaryContainer,
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(
-                    text = task?.title ?: "自由专注",
+                    text = task?.title ?: quest?.title ?: "自由专注",
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -242,14 +250,23 @@ private fun RunningCard(
     }
 }
 
-/** 「领域 chip」文案：主线/支线 · 领域名。 */
-private fun focusScopeLabel(quest: QuestEntity?, domain: DomainEntity?): String {
+/**
+ * 「领域 chip」文案：主线/支线 · 领域名，提前开工别的日子的任务时补上那天的日期，
+ * 免得看不出计的是哪一天的时间块。
+ */
+private fun focusScopeLabel(
+    quest: QuestEntity?,
+    domain: DomainEntity?,
+    task: TaskEntity?,
+): String {
     val kind = when (quest?.type) {
         QuestType.MAIN -> "主线"
         QuestType.SIDE -> "支线"
         null -> "自由"
     }
-    return domain?.name?.let { "$kind · $it" } ?: kind
+    val scope = domain?.name?.let { "$kind · $it" } ?: kind
+    val otherDay = task?.epochDay?.takeIf { it != LocalDate.now().toEpochDay() }
+    return otherDay?.let { "$scope · ${TimeFormat.shortDate(it)} 的任务" } ?: scope
 }
 
 /** 无进行中专注时占住计时卡的位置，保持屏内布局稳定。 */
@@ -348,10 +365,7 @@ private fun TimelineLegend() {
         LegendCaption("难度")
         Difficulty.entries.forEach { CiDifficultyChip(it) }
         LegendCaption("状态", startPadding = CiSpacing.sm)
-        CiLegendDot(colors.taskPlanned.accent, "计划中")
-        CiLegendDot(colors.taskRunning.accent, "进行中")
-        CiLegendDot(colors.taskDone.accent, "已完成")
-        CiLegendDot(colors.taskSkipped.accent, "已跳过")
+        TaskStatus.entries.forEach { CiLegendDot(colors.taskBlock(it).accent, it.label) }
     }
 }
 

@@ -38,7 +38,9 @@ import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
+import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.designsystem.CiChip
+import com.wsy.ci.core.designsystem.CiFormDialog
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
@@ -49,10 +51,12 @@ import com.wsy.ci.core.designsystem.CiUnderlineTabs
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.title.Titles
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.feature.today.TaskEditorDialog
 import java.time.LocalDate
 
 private enum class QuestTab(val label: String) {
     MAIN_SIDE("主线 · 支线"),
+    FINISHED("已完成主线 · 支线"),
     DOMAIN("领域头衔"),
 }
 
@@ -68,15 +72,29 @@ private val SIDE_CARD_HEIGHT = 132.dp
 private const val DEADLINE_WARN_DAYS = 3
 
 @Composable
-fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
+fun QuestScreen(
+    viewModel: QuestViewModel = viewModel(),
+    onNavigateToToday: () -> Unit = {},
+) {
     val quests by viewModel.quests.collectAsState()
     val domains by viewModel.domains.collectAsState()
     val message by viewModel.message.collectAsState()
     val routeGen by viewModel.routeGen.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
+    val selectedQuestId by viewModel.selectedQuestId.collectAsState()
+    val questTasks by viewModel.questTasks.collectAsState()
+    val running by viewModel.runningSession.collectAsState()
+
+    // 进行中与完成/归档分屏展示：完成的仍要能点开回看，所以两份都来自同一个全量流
+    val activeQuests = quests.filter { it.status == QuestStatus.ACTIVE }
+    val finishedQuests = quests.filter { it.status != QuestStatus.ACTIVE }
+    val activeMains = activeQuests.filter { it.type == QuestType.MAIN }
 
     var tab by remember { mutableStateOf(QuestTab.MAIN_SIDE) }
     var editing by remember { mutableStateOf<QuestEntity?>(null) }
+    var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
+    var openedDomain by remember { mutableStateOf<DomainEntity?>(null) }
+    var deleting by remember { mutableStateOf<QuestEntity?>(null) }
     var showRouteGen by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -138,25 +156,100 @@ fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
 
             when (tab) {
                 QuestTab.MAIN_SIDE -> QuestBoard(
-                    quests = quests,
+                    quests = activeQuests,
+                    emptyHint = "还没有进行中的任务线，点右下角创建第一条吧",
+                    onOpen = viewModel::openQuest,
                     onEdit = { editing = it },
                     onComplete = viewModel::completeQuest,
                     onArchive = viewModel::archiveQuest,
+                    onRestore = viewModel::restoreQuest,
+                    modifier = Modifier.weight(1f),
+                )
+                QuestTab.FINISHED -> QuestBoard(
+                    quests = finishedQuests,
+                    emptyHint = "还没有完成或归档的任务线。完成一条主线/支线后它会挪到这里，" +
+                        "点开仍能回看当初排出的具体任务。",
+                    onOpen = viewModel::openQuest,
+                    onEdit = { editing = it },
+                    onComplete = viewModel::completeQuest,
+                    onArchive = viewModel::archiveQuest,
+                    onRestore = viewModel::restoreQuest,
                     modifier = Modifier.weight(1f),
                 )
                 QuestTab.DOMAIN -> DomainTitleBoard(
                     domains = domains,
                     onAddDomain = viewModel::addDomain,
+                    onOpenDomain = { openedDomain = it },
                     modifier = Modifier.weight(1f),
                 )
             }
         }
     }
 
+    openedDomain?.let { domain ->
+        DomainDetailDialog(
+            domain = domain,
+            quests = quests,
+            onOpenQuest = { viewModel.openQuest(it); openedDomain = null },
+            onDismiss = { openedDomain = null },
+        )
+    }
+
+    quests.firstOrNull { it.id == selectedQuestId }?.let { quest ->
+        QuestDetailDialog(
+            quest = quest,
+            tasks = questTasks,
+            parentMainTitle = quest.parentQuestId
+                ?.let { parentId -> quests.firstOrNull { it.id == parentId } }
+                ?.title,
+            isTimerRunning = running != null,
+            onStartQuest = {
+                viewModel.startQuestFocus(quest)
+                viewModel.closeQuest()
+                onNavigateToToday()
+            },
+            onStartTask = {
+                viewModel.startTimer(it)
+                viewModel.closeQuest()
+                onNavigateToToday()
+            },
+            onSkipTask = viewModel::skipTask,
+            // 任务卡叠在详情之上，存完退回详情，接着改下一条
+            onEditTask = { editingTask = it },
+            onEditQuest = { editing = quest; viewModel.closeQuest() },
+            onDeleteQuest = { deleting = quest },
+            onDismiss = viewModel::closeQuest,
+        )
+    }
+
+    deleting?.let { quest ->
+        DeleteQuestDialog(
+            quest = quest,
+            taskCount = questTasks.size,
+            onConfirm = { viewModel.deleteQuest(quest); deleting = null },
+            onDismiss = { deleting = null },
+        )
+    }
+
+    editingTask?.let { task ->
+        TaskEditorDialog(
+            initial = task,
+            domains = domains,
+            // 只让挂进行中的任务线，避免新任务落到已完成的线上
+            quests = activeQuests,
+            onSave = viewModel::saveTask,
+            onDelete = viewModel::deleteTask,
+            onDismiss = { editingTask = null },
+            onCreateDomain = { name, onCreated -> viewModel.addDomain(name, onCreated) },
+        )
+    }
+
     editing?.let { quest ->
         QuestEditorDialog(
             initial = quest,
             domains = domains,
+            // 可挂靠的主线：进行中的 + 这条支线当前已挂的那条（哪怕它已完成）
+            mains = (activeMains + quests.filter { it.id == quest.parentQuestId }).distinct(),
             onSave = { viewModel.saveQuest(it) },
             onDismiss = { editing = null },
         )
@@ -187,13 +280,57 @@ fun QuestScreen(viewModel: QuestViewModel = viewModel()) {
     }
 }
 
+/** 删除前的二次确认：说清楚会连带影响什么，删除不可撤销。 */
+@Composable
+private fun DeleteQuestDialog(
+    quest: QuestEntity,
+    taskCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val kind = if (quest.type == QuestType.MAIN) "主线" else "支线"
+    CiFormDialog(
+        title = "删除$kind「${quest.title}」？",
+        onDismiss = onDismiss,
+        confirmLabel = null,
+        onConfirm = null,
+        dismissLabel = "取消",
+        destructiveLabel = "确认删除",
+        onDestructive = onConfirm,
+    ) {
+        Text(
+            text = buildString {
+                append("删除后不可恢复。")
+                if (taskCount > 0) {
+                    append("它下面的 $taskCount 个具体任务不会被删，只是解除关联，")
+                    append("仍留在日程与复盘记录里。")
+                } else {
+                    append("这条$kind 没有排出任何时间块。")
+                }
+                if (quest.type == QuestType.MAIN) {
+                    append("挂在它下面的支线会变回独立支线。")
+                }
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * 主线 + 支线两栏看板。进行中与已完成两个 tab 共用它，差别只在传进来的列表，
+ * 卡片上的操作按钮按每张卡自己的状态给（见 [QuestCardActions]）。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuestBoard(
     quests: List<QuestEntity>,
+    emptyHint: String,
+    onOpen: (QuestEntity) -> Unit,
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
+    onRestore: (QuestEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mains = quests.filter { it.type == QuestType.MAIN }
@@ -205,14 +342,17 @@ private fun QuestBoard(
     ) {
         if (quests.isEmpty()) {
             Text(
-                text = "还没有任务线，点右下角创建第一条吧",
+                text = emptyHint,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (mains.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("主线（${mains.count { it.status == QuestStatus.ACTIVE }}/2）")
+                val activeCount = mains.count { it.status == QuestStatus.ACTIVE }
+                SectionLabel(
+                    if (activeCount > 0) "主线（$activeCount/2）" else "主线（${mains.size}）"
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
@@ -221,9 +361,11 @@ private fun QuestBoard(
                     mains.forEach { quest ->
                         MainQuestCard(
                             quest = quest,
+                            onOpen = onOpen,
                             onEdit = onEdit,
                             onComplete = onComplete,
                             onArchive = onArchive,
+                            onRestore = onRestore,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -232,7 +374,7 @@ private fun QuestBoard(
         }
         if (sides.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("支线")
+                SectionLabel("支线（${sides.size}）")
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
@@ -241,14 +383,44 @@ private fun QuestBoard(
                     sides.forEach { quest ->
                         SideQuestCard(
                             quest = quest,
+                            onOpen = onOpen,
                             onEdit = onEdit,
                             onComplete = onComplete,
                             onArchive = onArchive,
+                            onRestore = onRestore,
                             modifier = Modifier.weight(1f),
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 卡片右上角的操作组。进行中给「编辑 / 完成 / 归档」，
+ * 完成或归档后给「恢复」——归档不该是单程票，收错了要能捞回来。
+ */
+@Composable
+private fun QuestCardActions(
+    quest: QuestEntity,
+    onEdit: (QuestEntity) -> Unit,
+    onComplete: (QuestEntity) -> Unit,
+    onArchive: (QuestEntity) -> Unit,
+    onRestore: (QuestEntity) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        when (quest.status) {
+            QuestStatus.ACTIVE -> {
+                IconAction("✏️") { onEdit(quest) }
+                IconAction("✅") { onComplete(quest) }
+                IconAction("📦") { onArchive(quest) }
+            }
+            QuestStatus.DONE -> {
+                IconAction("↩️") { onRestore(quest) }
+                IconAction("📦") { onArchive(quest) }
+            }
+            QuestStatus.ARCHIVED -> IconAction("↩️") { onRestore(quest) }
         }
     }
 }
@@ -262,13 +434,15 @@ private fun SectionLabel(text: String) {
     )
 }
 
-/** 主线卡：标题 + 描述 + 编辑/归档 + 截止 chip + 时间进度条。 */
+/** 主线卡：标题 + 描述 + 编辑/归档 + 截止 chip + 时间进度条。整卡可点，打开任务线详情。 */
 @Composable
 private fun MainQuestCard(
     quest: QuestEntity,
+    onOpen: (QuestEntity) -> Unit,
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
+    onRestore: (QuestEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val today = LocalDate.now().toEpochDay()
@@ -276,7 +450,7 @@ private fun MainQuestCard(
     val progress = timeProgress(quest, today)
 
     CiPanelCard(
-        modifier = modifier.height(MAIN_CARD_HEIGHT),
+        modifier = modifier.height(MAIN_CARD_HEIGHT).clickable { onOpen(quest) },
         contentPadding = 20.dp,
     ) {
         Column(
@@ -286,7 +460,7 @@ private fun MainQuestCard(
             Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = quest.title + if (quest.status == QuestStatus.DONE) "（已完成）" else "",
+                        text = quest.title + statusSuffix(quest.status),
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -302,13 +476,7 @@ private fun MainQuestCard(
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                    if (quest.status == QuestStatus.ACTIVE) {
-                        IconAction("✏️") { onEdit(quest) }
-                        IconAction("✅") { onComplete(quest) }
-                    }
-                    IconAction("📦") { onArchive(quest) }
-                }
+                QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -367,17 +535,19 @@ private fun timeProgress(quest: QuestEntity, today: Long): Float? {
     return ((today - startDay) / span).coerceIn(0f, 1f)
 }
 
-/** 支线卡：标题 + 🔥连击 chip + 历史最佳。 */
+/** 支线卡：标题 + 🔥连击 chip + 历史最佳。整卡可点，打开任务线详情。 */
 @Composable
 private fun SideQuestCard(
     quest: QuestEntity,
+    onOpen: (QuestEntity) -> Unit,
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
+    onRestore: (QuestEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     CiPanelCard(
-        modifier = modifier.height(SIDE_CARD_HEIGHT),
+        modifier = modifier.height(SIDE_CARD_HEIGHT).clickable { onOpen(quest) },
         contentPadding = CiSpacing.md,
     ) {
         Column(
@@ -386,18 +556,13 @@ private fun SideQuestCard(
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
                 Text(
-                    text = quest.title + if (quest.status == QuestStatus.DONE) "（已完成）" else "",
+                    text = quest.title + statusSuffix(quest.status),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (quest.status == QuestStatus.ACTIVE) {
-                    IconAction("✏️") { onEdit(quest) }
-                    IconAction("✅") { onComplete(quest) }
-                } else {
-                    IconAction("📦") { onArchive(quest) }
-                }
+                QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -423,6 +588,13 @@ private fun SideQuestCard(
     }
 }
 
+/** 卡片标题后缀：已完成 tab 里两种状态混排，光看卡片得能分出来。 */
+private fun statusSuffix(status: QuestStatus): String = when (status) {
+    QuestStatus.ACTIVE -> ""
+    QuestStatus.DONE -> "（已完成）"
+    QuestStatus.ARCHIVED -> "（已归档）"
+}
+
 @Composable
 private fun IconAction(emoji: String, onClick: () -> Unit) {
     Text(
@@ -436,6 +608,7 @@ private fun IconAction(emoji: String, onClick: () -> Unit) {
 private fun DomainTitleBoard(
     domains: List<DomainEntity>,
     onAddDomain: (String) -> Unit,
+    onOpenDomain: (DomainEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var newName by remember { mutableStateOf("") }
@@ -443,7 +616,10 @@ private fun DomainTitleBoard(
         modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
     ) {
-        domains.forEach { DomainCard(it) }
+        SectionLabel("点开任一领域，可以看到挣这条头衔线经验的主线与支线（含已完成的）")
+        domains.forEach { domain ->
+            DomainCard(domain, onOpen = { onOpenDomain(domain) })
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = CiSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
@@ -467,16 +643,16 @@ private fun DomainTitleBoard(
     }
 }
 
-/** 领域头衔卡：Lv.x · 头衔名 + 经验条 + 6 级头衔 chip 行。 */
+/** 领域头衔卡：Lv.x · 头衔名 + 经验条 + 6 级头衔 chip 行。整卡可点，看这块经验的来处。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DomainCard(domain: DomainEntity) {
+private fun DomainCard(domain: DomainEntity, onOpen: () -> Unit) {
     val level = Economy.levelForExp(domain.totalExp)
     val titles = Titles.titleLine(domain)
     val nextExp = Economy.expToNextLevel(domain.totalExp)
 
     CiPanelCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
         contentPadding = 20.dp,
         verticalSpacing = 10.dp,
     ) {

@@ -40,6 +40,7 @@ import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiElevation
+import com.wsy.ci.core.designsystem.CiFormDialog
 import com.wsy.ci.core.designsystem.CiFormField
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
@@ -47,43 +48,6 @@ import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.util.TimeFormat
-
-/** 表单/确认类对话框外壳：560dp 宽、圆角 28、surfaceContainerHigh、内边距 24。 */
-@Composable
-private fun CiFormDialog(
-    title: String,
-    onDismiss: () -> Unit,
-    confirmLabel: String?,
-    onConfirm: (() -> Unit)?,
-    dismissLabel: String = "取消",
-    content: @Composable () -> Unit,
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.width(CiSizes.dialogFormWidth),
-            shape = CiShapes.dialog,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = CiElevation.dialog,
-        ) {
-            Column(
-                modifier = Modifier.padding(CiSpacing.lg),
-                verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
-            ) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge)
-                content()
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = CiSpacing.xxs + 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm, Alignment.End),
-                ) {
-                    TextButton(onClick = onDismiss) { Text(dismissLabel) }
-                    if (confirmLabel != null && onConfirm != null) {
-                        Button(onClick = onConfirm, shape = CiShapes.pill) { Text(confirmLabel) }
-                    }
-                }
-            }
-        }
-    }
-}
 
 /**
  * 庆祝类对话框外壳：480dp 宽、圆角 28，带放射光环装饰。
@@ -177,12 +141,14 @@ internal fun TaskDetailDialog(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
             Text(
-                text = "${TimeFormat.minuteOfDay(task.startMinute)} – " +
+                text = "${TimeFormat.date(task.epochDay)} · " +
+                    "${TimeFormat.minuteOfDay(task.startMinute)} – " +
                     TimeFormat.minuteOfDay(task.endMinute),
                 style = MaterialTheme.typography.bodyLarge.tabularNums(),
             )
             Text(
-                text = "难度：${task.difficulty.label} ×${task.difficulty.factor}",
+                text = "难度：${task.difficulty.label} ×${task.difficulty.factor}" +
+                    " · 状态：${task.status.label}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

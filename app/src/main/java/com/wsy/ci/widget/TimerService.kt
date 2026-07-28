@@ -31,9 +31,10 @@ class TimerService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val taskId = intent.getLongExtra(EXTRA_TASK_ID, -1).takeIf { it >= 0 }
+                val questId = intent.getLongExtra(EXTRA_QUEST_ID, -1).takeIf { it >= 0 }
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: "专注中"
                 scope.launch {
-                    val session = app().container.timerRepository.startSession(taskId)
+                    val session = app().container.timerRepository.startSession(taskId, questId)
                     startForeground(NOTIFICATION_ID, buildNotification(title, session.startAt))
                 }
             }
@@ -93,12 +94,15 @@ class TimerService : Service() {
         const val ACTION_START = "com.wsy.ci.timer.START"
         const val ACTION_STOP = "com.wsy.ci.timer.STOP"
         const val EXTRA_TASK_ID = "taskId"
+        const val EXTRA_QUEST_ID = "questId"
         const val EXTRA_TITLE = "title"
 
-        fun start(context: Context, taskId: Long?, title: String) {
+        /** [questId] 只在没有具体任务、直接对着任务线打卡时才需要传。 */
+        fun start(context: Context, taskId: Long?, title: String, questId: Long? = null) {
             val intent = Intent(context, TimerService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_TASK_ID, taskId ?: -1L)
+                .putExtra(EXTRA_QUEST_ID, questId ?: -1L)
                 .putExtra(EXTRA_TITLE, title)
             context.startForegroundService(intent)
         }

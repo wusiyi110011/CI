@@ -37,6 +37,11 @@ data class QuestEntity(
     val title: String,
     val description: String = "",
     val status: QuestStatus = QuestStatus.ACTIVE,
+    /**
+     * 支线可选归属的主线：「每天背 30 个单词」挂在「雅思冲刺」下面。
+     * 只对支线有意义，主线恒为 null；不填表示这条支线独立存在。
+     */
+    val parentQuestId: Long? = null,
     /** 主线章节结构，JSON（M3 由 LLM 生成）。 */
     val chaptersJson: String? = null,
     /** 主线截止日 epochDay。 */
@@ -50,7 +55,13 @@ data class QuestEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
-enum class TaskStatus { PLANNED, RUNNING, DONE, SKIPPED }
+/** 任务四态。[label] 是 UI 文案，落库走 name，改 label 不影响数据。 */
+enum class TaskStatus(val label: String) {
+    PLANNED("计划中"),
+    RUNNING("进行中"),
+    DONE("已完成"),
+    SKIPPED("已跳过"),
+}
 
 /** 排程任务实例：某天的一个计划时间块。时间用 epochDay + 当日分钟数表达。 */
 @Entity(
@@ -81,6 +92,11 @@ data class SessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val taskId: Long? = null,
     val domainId: Long? = null,
+    /**
+     * 直接对着任务线开的专注（支线打卡常这么用），没有具体任务时靠它记住算给谁。
+     * 有 [taskId] 时以任务自己的 questId 为准，这里可以为空。
+     */
+    val questId: Long? = null,
     val startAt: Long,
     val endAt: Long? = null,
     val focus: FocusOutcome = FocusOutcome.COMPLETED,
@@ -136,6 +152,16 @@ data class PurchaseEntity(
     val itemName: String,
     val pricePaid: Long,
     val at: Long = System.currentTimeMillis(),
+    /**
+     * 兑换后有没有真正去兑现。花掉 CI 只是买下了权利，
+     * 「看一场电影」得真去看了才算数，所以状态由自己在「我的」里手动标。
+     */
+    val fulfilled: Boolean = false,
+    /**
+     * 下单时的品质，随名字与价格一起冗余存下来。
+     * 货架商品可以被删改，但「我兑换过一件传说」这个事实不该跟着变。
+     */
+    val rarity: Rarity = Rarity.COMMON,
 )
 
 /** 占位事件（临时有事）：重排引擎视为不可用时段。 */
