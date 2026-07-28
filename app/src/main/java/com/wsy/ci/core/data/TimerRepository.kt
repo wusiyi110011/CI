@@ -46,8 +46,12 @@ class TimerRepository(private val db: CiDatabase) {
         return session.copy(id = id)
     }
 
-    /** 结束计时并结算。focus 为专注结果（放弃 0.5 / 超时 0.9 / 按时 1.0）。 */
-    suspend fun stopSession(focus: FocusOutcome): Settlement? {
+    /**
+     * 结束计时并结算。focus 为专注结果（放弃 0.5 / 超时 0.9 / 按时 1.0）。
+     * [note] 是可选的完成描述：关联了任务就追加进 `task.note`，
+     * 自由专注没有任务可写，则落到本次入账的流水备注里，不静默丢弃。
+     */
+    suspend fun stopSession(focus: FocusOutcome, note: String = ""): Settlement? {
         val session = db.sessionDao().openSession() ?: return null
         val now = System.currentTimeMillis()
         val minutes = ((now - session.startAt) / 60_000.0).roundToInt().coerceAtLeast(0)
@@ -61,9 +65,10 @@ class TimerRepository(private val db: CiDatabase) {
         db.sessionDao().update(
             session.copy(endAt = now, focus = focus, rewardCi = reward, expGained = exp)
         )
+        val trimmedNote = note.trim()
         task?.let {
             val done = if (focus == FocusOutcome.ABANDONED) TaskStatus.PLANNED else TaskStatus.DONE
-            db.taskDao().update(it.copy(status = done))
+            db.taskDao().update(it.copy(status = done, note = appendNote(it.note, trimmedNote)))
         }
         if (reward > 0) {
             db.ledgerDao().insert(
@@ -71,7 +76,7 @@ class TimerRepository(private val db: CiDatabase) {
                     amount = reward,
                     type = LedgerType.EARN_TASK,
                     refId = session.id,
-                    note = task?.title ?: "自由专注",
+                    note = task?.title ?: trimmedNote.ifBlank { "自由专注" },
                 )
             )
         }
@@ -84,6 +89,16 @@ class TimerRepository(private val db: CiDatabase) {
             newLevel = levelUp?.first,
             levelUpRewardCi = levelUp?.second ?: 0,
         )
+    }
+
+    /**
+     * 把本次完成描述追加到任务原备注末尾（一个任务可能被多次专注，逐条累积成日志）。
+     * 原备注为空时直接取代，避免开头多出一个空行。
+     */
+    private fun appendNote(existing: String, added: String): String = when {
+        added.isBlank() -> existing
+        existing.isBlank() -> added
+        else -> "$existing\n$added"
     }
 
     /** 经验入账；若跨过升级门槛，发升级奖励并返回 (新等级, 奖励)。 */

@@ -55,6 +55,7 @@ fun TaskEditorDialog(
     var domainId by remember { mutableStateOf(initial.domainId) }
     var questId by remember { mutableStateOf(initial.questId) }
     var locked by remember { mutableStateOf(initial.locked) }
+    var note by remember { mutableStateOf(initial.note) }
     var newDomainName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -118,6 +119,11 @@ fun TaskEditorDialog(
                     onClick = { locked = !locked },
                     label = { Text(if (locked) "🔒 已锁定（重排不移动）" else "未锁定") },
                 )
+                CiFormField(
+                    value = note, onValueChange = { note = it },
+                    label = "备注 / 复盘", singleLine = false, minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 error?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }
         },
@@ -132,6 +138,7 @@ fun TaskEditorDialog(
                     initial.copy(
                         title = title.trim(), startMinute = startMin, endMinute = endMin,
                         difficulty = difficulty, domainId = did, questId = questId, locked = locked,
+                        note = note.trim(),
                     )
                 }
                 if (newDomainName.isNotBlank()) {

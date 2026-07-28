@@ -61,9 +61,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { CiWidgetUpdater.updateAll(getApplication()) }
     }
 
-    fun stopTimer(focus: FocusOutcome) {
+    /** [note] 为结束弹窗里填的完成描述，可空。 */
+    fun stopTimer(focus: FocusOutcome, note: String = "") {
         viewModelScope.launch {
-            val settlement = container.timerRepository.stopSession(focus)
+            val settlement = container.timerRepository.stopSession(focus, note)
             lastSettlement.value = settlement
             TimerService.stop(getApplication())
             CiWidgetUpdater.updateAll(getApplication())
