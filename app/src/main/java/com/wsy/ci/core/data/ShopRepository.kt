@@ -7,6 +7,7 @@ import com.wsy.ci.core.db.LedgerType
 import com.wsy.ci.core.db.PurchaseEntity
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.economy.DailyShop
+import com.wsy.ci.core.economy.DefaultShopItems
 import java.time.LocalDate
 
 sealed interface PurchaseResult {
@@ -23,6 +24,17 @@ class ShopRepository(private val db: CiDatabase) {
     fun observeTodayPicks() = db.shopDao().observePicks(LocalDate.now().toEpochDay())
     fun observeBalance() = db.ledgerDao().observeBalance()
     fun observeLedger(limit: Int = 200) = db.ledgerDao().observeRecent(limit)
+
+    /**
+     * 铺默认货架。按商品名去重，且比对的是**含已下架的**全部商品——
+     * 否则用户主动删掉的商品每次启动又被塞回来。幂等，可反复调用。
+     */
+    suspend fun ensureSeedItems() {
+        val existing = db.shopDao().allItemNames().toSet()
+        DefaultShopItems.ALL
+            .filterNot { it.name in existing }
+            .forEach { db.shopDao().insertItem(it) }
+    }
 
     /** 确保今日精选已生成；App 打开与每日 WorkManager 都会调用，幂等。 */
     suspend fun ensureTodayPicks() {

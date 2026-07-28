@@ -53,7 +53,11 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     val lastSettlement = MutableStateFlow<Settlement?>(null)
 
     init {
-        viewModelScope.launch { container.shopRepository.ensureTodayPicks() }
+        viewModelScope.launch {
+            // 顺序不能反：空货架抽不出今日精选
+            container.shopRepository.ensureSeedItems()
+            container.shopRepository.ensureTodayPicks()
+        }
     }
 
     fun startTimer(task: TaskEntity?) {
