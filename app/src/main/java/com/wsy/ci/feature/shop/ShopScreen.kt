@@ -51,10 +51,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.core.db.DailyPickEntity
 import com.wsy.ci.core.db.LedgerEntity
 import com.wsy.ci.core.db.LedgerType
+import com.wsy.ci.core.db.PurchaseEntity
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.designsystem.CiBalanceChip
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiPanelCard
+import com.wsy.ci.core.designsystem.CiPasteImportDialog
 import com.wsy.ci.core.designsystem.CiQualityChip
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiShapes
@@ -68,11 +70,17 @@ import com.wsy.ci.core.designsystem.formatSignedAmount
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.economy.DailyShop
 import com.wsy.ci.core.economy.Rarity
+import com.wsy.ci.core.porting.ShopImport
+import com.wsy.ci.core.shop.FulfillFilter
+import com.wsy.ci.core.shop.PurchaseBoard
+import com.wsy.ci.core.shop.PurchaseFilter
+import com.wsy.ci.core.shop.TimeFilter
 import com.wsy.ci.core.util.TimeFormat
 
 private enum class ShopTab(val label: String) {
     PICKS("今日精选"),
     SHELF("货架"),
+    MINE("我的"),
     LEDGER("流水"),
 }
 
@@ -104,12 +112,16 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
     val picks by viewModel.picks.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val ledger by viewModel.ledger.collectAsState()
+    val purchases by viewModel.purchases.collectAsState()
+    val purchaseFilter by viewModel.purchaseFilter.collectAsState()
     val message by viewModel.message.collectAsState()
     val aiPrice by viewModel.aiPrice.collectAsState()
+    val importResult by viewModel.importResult.collectAsState()
 
     var tab by remember { mutableStateOf(ShopTab.PICKS) }
     var editing by remember { mutableStateOf<ShopItemEntity?>(null) }
     var showAiInput by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -157,12 +169,16 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     modifier = Modifier.weight(1f),
                 )
                 if (tab == ShopTab.SHELF) {
-                    OutlinedButton(
-                        onClick = { showAiInput = true },
-                        shape = CiShapes.pill,
+                    Row(
                         modifier = Modifier.padding(bottom = CiSpacing.xs),
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                     ) {
-                        Text("🤖 AI 估价上架", style = MaterialTheme.typography.labelMedium)
+                        OutlinedButton(onClick = { showAiInput = true }, shape = CiShapes.pill) {
+                            Text("🤖 AI 估价上架", style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                            Text("📥 粘贴批量上架", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
@@ -181,6 +197,16 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     onEdit = { editing = it },
                     modifier = Modifier.weight(1f),
                 )
+                ShopTab.MINE -> PurchaseList(
+                    purchases = purchases,
+                    filter = purchaseFilter,
+                    onToggleRarity = viewModel::toggleRarityFilter,
+                    onSetFulfill = viewModel::setFulfillFilter,
+                    onSetTime = viewModel::setTimeFilter,
+                    onReset = viewModel::resetPurchaseFilter,
+                    onToggleFulfilled = viewModel::toggleFulfilled,
+                    modifier = Modifier.weight(1f),
+                )
                 ShopTab.LEDGER -> LedgerList(ledger, modifier = Modifier.weight(1f))
             }
         }
@@ -192,6 +218,20 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             onSave = viewModel::saveItem,
             onDelete = if (item.id != 0L) viewModel::removeItem else null,
             onDismiss = { editing = null },
+        )
+    }
+
+    if (showImport) {
+        CiPasteImportDialog(
+            title = "📥 粘贴批量上架",
+            hint = "把「复制模板」的内容发给任何 AI（或自己写），列好想要的奖励后粘贴到下面。" +
+                "同名商品会自动跳过。",
+            template = ShopImport.TEMPLATE,
+            pasteLabel = "粘贴商品 JSON",
+            result = importResult,
+            onImport = viewModel::importItems,
+            onDismissResult = viewModel::dismissImportResult,
+            onDismiss = { showImport = false },
         )
     }
 
@@ -495,6 +535,220 @@ private fun LedgerList(entries: List<LedgerEntity>, modifier: Modifier = Modifie
                 )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+}
+
+/**
+ * 「我的」：已兑换的奖励清单。花掉 CI 只是买下了权利，真去兑现了才手动标「已实现」，
+ * 所以未实现的排在前面当待办看，已实现的沉到下面当战利品看。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PurchaseList(
+    purchases: List<PurchaseEntity>,
+    filter: PurchaseFilter,
+    onToggleRarity: (Rarity) -> Unit,
+    onSetFulfill: (FulfillFilter) -> Unit,
+    onSetTime: (TimeFilter) -> Unit,
+    onReset: () -> Unit,
+    onToggleFulfilled: (PurchaseEntity) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (purchases.isEmpty()) {
+        EmptyHint(text = "还没兑换过奖励，攒够 CI 去货架上挑一个吧", modifier = modifier)
+        return
+    }
+    val shown = PurchaseBoard.apply(purchases, filter, System.currentTimeMillis())
+    val doneCount = purchases.count { it.fulfilled }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        PurchaseFilterBar(
+            filter = filter,
+            onToggleRarity = onToggleRarity,
+            onSetFulfill = onSetFulfill,
+            onSetTime = onSetTime,
+            onReset = onReset,
+        )
+        Text(
+            text = "共 ${purchases.size} 件 · 已实现 $doneCount 件 · " +
+                "待实现 ${purchases.size - doneCount} 件" +
+                if (shown.size != purchases.size) " · 当前筛选出 ${shown.size} 件" else "",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (shown.isEmpty()) {
+            EmptyHint(
+                text = "没有符合当前筛选条件的记录，点「重置」看全部",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            return@Column
+        }
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .clip(CiShapes.field)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
+        ) {
+            items(shown, key = { it.id }) { purchase ->
+                PurchaseRow(purchase = purchase, onToggle = { onToggleFulfilled(purchase) })
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+    }
+}
+
+/** 筛选条：品质多选 + 状态单选 + 时间单选，默认全不限，右侧一键重置。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PurchaseFilterBar(
+    filter: PurchaseFilter,
+    onToggleRarity: (Rarity) -> Unit,
+    onSetFulfill: (FulfillFilter) -> Unit,
+    onSetTime: (TimeFilter) -> Unit,
+    onReset: () -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+    ) {
+        FilterCaption("品质")
+        Rarity.entries.forEach { rarity ->
+            val selected = rarity in filter.rarities
+            val quality = CiTheme.colors.quality(rarity)
+            FilterChipItem(
+                text = rarity.label,
+                selected = selected,
+                container = if (selected) quality.container else null,
+                content = if (selected) quality.accent else null,
+                onClick = { onToggleRarity(rarity) },
+            )
+        }
+        FilterCaption("状态")
+        FulfillFilter.entries.forEach { option ->
+            FilterChipItem(
+                text = option.label,
+                selected = filter.fulfill == option,
+                onClick = { onSetFulfill(option) },
+            )
+        }
+        FilterCaption("时间")
+        TimeFilter.entries.forEach { option ->
+            FilterChipItem(
+                text = option.label,
+                selected = filter.time == option,
+                onClick = { onSetTime(option) },
+            )
+        }
+        if (!filter.isDefault) {
+            TextButton(onClick = onReset) {
+                Text("重置", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterCaption(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = CiSpacing.xs),
+    )
+}
+
+@Composable
+private fun FilterChipItem(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    container: androidx.compose.ui.graphics.Color? = null,
+    content: androidx.compose.ui.graphics.Color? = null,
+) {
+    CiChip(
+        text = text,
+        container = container ?: if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        content = content ?: if (selected) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        style = MaterialTheme.typography.labelMedium,
+        borderColor = if (selected) MaterialTheme.colorScheme.onSurface else null,
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(CiSizes.shelfRowHeight)
+            // 已实现的压一层阴影底色，整行看起来是「沉下去」的，和待兑现的一眼分开
+            .then(
+                if (purchase.fulfilled) {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = CiSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+    ) {
+        CiQualityChip(purchase.rarity, purchase.rarity.label)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = purchase.itemName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (purchase.fulfilled) TextDecoration.LineThrough else null,
+            )
+            Text(
+                text = "${TimeFormat.shortDate(TimeFormat.millisToEpochDay(purchase.at))} " +
+                    "${TimeFormat.clock(purchase.at)} · 花费 ${formatCi(purchase.pricePaid)}",
+                style = MaterialTheme.typography.labelSmall.tabularNums(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        CiChip(
+            text = if (purchase.fulfilled) "已实现" else "未实现",
+            container = if (purchase.fulfilled) {
+                MaterialTheme.colorScheme.tertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+            content = if (purchase.fulfilled) {
+                MaterialTheme.colorScheme.onTertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            style = MaterialTheme.typography.labelMedium,
+        )
+        if (purchase.fulfilled) {
+            TextButton(onClick = onToggle) {
+                Text("撤销", style = MaterialTheme.typography.labelMedium)
+            }
+        } else {
+            Button(
+                onClick = onToggle,
+                shape = CiShapes.pill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
+                contentPadding = PaddingValues(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
+            ) {
+                Text("✓ 已实现", style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }

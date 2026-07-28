@@ -18,12 +18,16 @@ import com.wsy.ci.llm.ParsedBlocker
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.LocalDate
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as CiApp).container
@@ -38,6 +42,16 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val runningSession: StateFlow<SessionEntity?> = db.sessionDao().observeOpenSession()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * 计时中的任务。单独查而不是从 [tasks] 里找：任务线详情和日程屏都能对
+     * 非今天的任务开始专注，那种任务不在今日列表里。
+     */
+    val runningTask: StateFlow<TaskEntity?> = runningSession
+        .flatMapLatest { session ->
+            session?.taskId?.let { db.taskDao().observeById(it) } ?: flowOf(null)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val domains: StateFlow<List<DomainEntity>> = db.domainDao().observeAll()

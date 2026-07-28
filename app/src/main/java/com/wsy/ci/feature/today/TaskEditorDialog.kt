@@ -49,6 +49,7 @@ fun TaskEditorDialog(
     onCreateDomain: (String, (Long) -> Unit) -> Unit,
 ) {
     var title by remember { mutableStateOf(initial.title) }
+    var date by remember { mutableStateOf(formatDate(initial.epochDay)) }
     var start by remember { mutableStateOf(formatMinute(initial.startMinute)) }
     var end by remember { mutableStateOf(formatMinute(initial.endMinute)) }
     var difficulty by remember { mutableStateOf(initial.difficulty) }
@@ -74,6 +75,11 @@ fun TaskEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CiFormField(
+                        value = date, onValueChange = { date = it },
+                        label = "日期 yyyy-MM-dd", singleLine = true,
+                        modifier = Modifier.width(180.dp),
+                    )
                     CiFormField(
                         value = start, onValueChange = { start = it },
                         label = "开始 HH:mm", singleLine = true,
@@ -129,14 +135,17 @@ fun TaskEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = {
+                val epochDay = parseDate(date)
                 val startMin = parseMinute(start)
                 val endMin = parseMinute(end)
                 if (title.isBlank()) { error = "任务名不能为空"; return@TextButton }
+                if (epochDay == null) { error = "日期格式应为 yyyy-MM-dd"; return@TextButton }
                 if (startMin == null || endMin == null) { error = "时间格式应为 HH:mm"; return@TextButton }
                 if (endMin <= startMin) { error = "结束时间必须晚于开始时间"; return@TextButton }
                 val build: (Long?) -> TaskEntity = { did ->
                     initial.copy(
-                        title = title.trim(), startMinute = startMin, endMinute = endMin,
+                        title = title.trim(), epochDay = epochDay,
+                        startMinute = startMin, endMinute = endMin,
                         difficulty = difficulty, domainId = did, questId = questId, locked = locked,
                         note = note.trim(),
                     )
@@ -223,6 +232,15 @@ private fun QuestPicker(
 }
 
 private fun formatMinute(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
+
+private fun formatDate(epochDay: Long): String = java.time.LocalDate.ofEpochDay(epochDay).toString()
+
+/** 开始计时会把任务搬到今天，所以日期必须可改，否则挪走了就回不去。 */
+private fun parseDate(text: String): Long? = try {
+    java.time.LocalDate.parse(text.trim()).toEpochDay()
+} catch (_: Exception) {
+    null
+}
 
 private fun parseMinute(text: String): Int? {
     val parts = text.trim().split(":", "：", ".")

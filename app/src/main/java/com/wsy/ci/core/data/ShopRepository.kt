@@ -7,6 +7,7 @@ import com.wsy.ci.core.db.LedgerType
 import com.wsy.ci.core.db.PurchaseEntity
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.economy.DailyShop
+import com.wsy.ci.core.economy.DefaultPurchases
 import com.wsy.ci.core.economy.DefaultShopItems
 import java.time.LocalDate
 
@@ -21,6 +22,21 @@ class ShopRepository(private val db: CiDatabase) {
 
     fun observeItems() = db.shopDao().observeItems()
     fun observePurchases() = db.shopDao().observePurchases()
+
+    /** 标记某笔兑换是否已经真正兑现（「我的」里手动切换）。 */
+    suspend fun setPurchaseFulfilled(purchase: PurchaseEntity, fulfilled: Boolean) {
+        db.shopDao().updatePurchase(purchase.copy(fulfilled = fulfilled))
+    }
+
+    /**
+     * 首次进商城时铺 12 条示例兑换记录（每品质 3 条），让「我的」不是一片空白。
+     * 只在一条记录都没有时铺，之后再也不动；不写流水，所以不影响余额。
+     */
+    suspend fun ensureSeedPurchases() {
+        if (db.shopDao().purchaseCount() > 0) return
+        db.shopDao().insertPurchases(DefaultPurchases.seeds(System.currentTimeMillis()))
+    }
+
     fun observeTodayPicks() = db.shopDao().observePicks(LocalDate.now().toEpochDay())
     fun observeBalance() = db.ledgerDao().observeBalance()
     fun observeLedger(limit: Int = 200) = db.ledgerDao().observeRecent(limit)
@@ -55,6 +71,9 @@ class ShopRepository(private val db: CiDatabase) {
         )
     }
 
+    /** 含已下架的全部商品名，批量导入时按名去重用。 */
+    suspend fun allItemNames(): List<String> = db.shopDao().allItemNames()
+
     suspend fun addItem(item: ShopItemEntity): Long = db.shopDao().insertItem(item)
 
     suspend fun updateItem(item: ShopItemEntity) = db.shopDao().updateItem(item)
@@ -83,7 +102,12 @@ class ShopRepository(private val db: CiDatabase) {
             )
         )
         db.shopDao().insertPurchase(
-            PurchaseEntity(itemId = item.id, itemName = item.name, pricePaid = price)
+            PurchaseEntity(
+                itemId = item.id,
+                itemName = item.name,
+                pricePaid = price,
+                rarity = item.rarity,
+            )
         )
         pick?.let { db.shopDao().updatePick(it.copy(purchased = true)) }
         return PurchaseResult.Success(item, price)

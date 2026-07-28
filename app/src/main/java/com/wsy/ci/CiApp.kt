@@ -5,6 +5,7 @@ import com.wsy.ci.core.data.ScheduleRepository
 import com.wsy.ci.core.data.ShopRepository
 import com.wsy.ci.core.data.TimerRepository
 import com.wsy.ci.core.db.CiDatabase
+import com.wsy.ci.core.settings.AppSettings
 import com.wsy.ci.llm.LlmService
 import com.wsy.ci.llm.LlmSettings
 import com.wsy.ci.llm.OpenAiCompatClient
@@ -15,6 +16,7 @@ class AppContainer(app: Application) {
     val db: CiDatabase = CiDatabase.get(app)
     val timerRepository = TimerRepository(db)
     val shopRepository = ShopRepository(db)
+    val appSettings = AppSettings(app)
     val llmSettings = LlmSettings(app)
     val llmService = LlmService(OpenAiCompatClient(llmSettings))
     val scheduleRepository = ScheduleRepository(db)

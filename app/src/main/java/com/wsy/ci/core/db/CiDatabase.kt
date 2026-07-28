@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.economy.Rarity
@@ -45,7 +47,7 @@ class EnumConverters {
         PurchaseEntity::class,
         BlockerEntity::class,
     ],
-    version = 1,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(EnumConverters::class)
@@ -61,13 +63,51 @@ abstract class CiDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: CiDatabase? = null
 
+        /**
+         * v1 → v2：购买记录加「是否已兑现」。
+         *
+         * 这是本工程第一条 migration——设备上已经有真实数据了，
+         * 不能再靠卸载重装糊弄过去。以后每改一次 Entity 都要照此补一条。
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE purchases ADD COLUMN fulfilled INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /** v2 → v3：购买记录冗余存下单时的品质，供「我的」按品质筛选与排序。 */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE purchases ADD COLUMN rarity TEXT NOT NULL DEFAULT 'COMMON'"
+                )
+            }
+        }
+
+        /** v3 → v4：专注记录记下任务线，支持不挂具体任务、直接对着支线打卡。 */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN questId INTEGER")
+            }
+        }
+
+        /** v4 → v5：支线可以挂到某条主线下面。 */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE quests ADD COLUMN parentQuestId INTEGER")
+            }
+        }
+
         fun get(context: Context): CiDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CiDatabase::class.java,
                     "ci.db",
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .build().also { instance = it }
             }
     }
 }

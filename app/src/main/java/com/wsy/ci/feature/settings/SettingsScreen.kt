@@ -44,6 +44,7 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
+import com.wsy.ci.core.settings.ThemeMode
 import com.wsy.ci.llm.LlmEndpoints
 import com.wsy.ci.llm.LlmSettings
 import com.wsy.ci.llm.LlmTaskType
@@ -55,6 +56,7 @@ private val KEY_CARD_HEIGHT: Dp = 180.dp
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val keyConfigured by viewModel.keyConfigured.collectAsState()
     val routes by viewModel.routes.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     val message by viewModel.message.collectAsState()
     val testing by viewModel.testing.collectAsState()
     val snackbar = remember { SnackbarHostState() }
@@ -75,6 +77,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
             CiScreenHeader(title = "设置", subtitle = "API Key 仅存本机 Keystore 加密存储")
+
+            AppearanceCard(current = themeMode, onSelect = viewModel::setThemeMode)
 
             Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
                 KeyCard(
@@ -102,6 +106,44 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 onSelect = viewModel::setRoute,
                 modifier = Modifier.weight(1f),
             )
+        }
+    }
+}
+
+/** 外观卡：明暗三选一。跟随系统之外还能手动钉死，夜里看平板不必去改系统设置。 */
+@Composable
+private fun AppearanceCard(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 20.dp, verticalSpacing = 10.dp) {
+        Column {
+            Text("外观", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "选「跟随系统」时随系统深色开关切换；桌面小组件始终跟随系统。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            ThemeMode.entries.forEach { mode ->
+                val selected = mode == current
+                CiChip(
+                    text = mode.label,
+                    container = if (selected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    content = if (selected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    borderColor = if (selected) MaterialTheme.colorScheme.onSurface else null,
+                    style = MaterialTheme.typography.labelMedium,
+                    horizontalPadding = CiSpacing.md,
+                    verticalPadding = CiSpacing.xs,
+                    modifier = Modifier.clickable { onSelect(mode) },
+                )
+            }
         }
     }
 }

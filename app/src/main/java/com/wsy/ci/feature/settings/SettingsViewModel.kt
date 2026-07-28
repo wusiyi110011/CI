@@ -4,17 +4,25 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
+import com.wsy.ci.core.settings.ThemeMode
 import com.wsy.ci.llm.LlmEndpoints
 import com.wsy.ci.llm.LlmResult
 import com.wsy.ci.llm.LlmSettings
 import com.wsy.ci.llm.LlmTaskType
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as CiApp).container
     private val settings = container.llmSettings
+    private val appSettings = container.appSettings
+
+    /** 外观：跟随系统 / 明亮 / 黑暗。写入后整棵 Compose 树立刻换色。 */
+    val themeMode: StateFlow<ThemeMode> = appSettings.themeMode
+
+    fun setThemeMode(mode: ThemeMode) = appSettings.setThemeMode(mode)
 
     val keyConfigured = MutableStateFlow(loadKeyStates())
     val routes = MutableStateFlow(loadRoutes())

@@ -78,6 +78,12 @@ object CiSizes {
     /** 庆祝类对话框宽度。 */
     val dialogCelebrateWidth = 480.dp
 
+    /** 含长列表的详情对话框宽度（任务线详情）。 */
+    val dialogWideWidth = 720.dp
+
+    /** 详情对话框内可滚动区域的最大高度，避免长列表撑破屏幕。 */
+    val dialogScrollMaxHeight = 420.dp
+
     /** 列表行高：货架。 */
     val shelfRowHeight = 64.dp
 

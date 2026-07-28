@@ -9,16 +9,24 @@ import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.porting.CiImport
 import com.wsy.ci.core.porting.ImportParseResult
+import com.wsy.ci.core.quest.checkinTaskOf
 import com.wsy.ci.core.title.Titles
+import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
 import com.wsy.ci.llm.RoutePlan
+import com.wsy.ci.widget.CiWidgetUpdater
+import com.wsy.ci.widget.TimerService
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -32,12 +40,14 @@ sealed interface RouteGenState {
     data class Error(val message: String) : RouteGenState
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as CiApp).container
     private val db = container.db
 
-    val quests: StateFlow<List<QuestEntity>> = db.questDao().observeAll()
+    /** 含已完成与已归档：任务屏要分「进行中」「已完成 · 已归档」两个 tab 展示。 */
+    val quests: StateFlow<List<QuestEntity>> = db.questDao().observeEvery()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val domains: StateFlow<List<DomainEntity>> = db.domainDao().observeAll()
@@ -45,6 +55,91 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 主线上限 2 条：超限时保存被拒并给出提示。 */
     val message = MutableStateFlow<String?>(null)
+
+    // ---------- 任务线详情（章节 + 具体任务 + 立即开始） ----------
+
+    /** 当前展开详情的任务线；null 表示没有打开详情。 */
+    val selectedQuestId = MutableStateFlow<Long?>(null)
+
+    /** 展开的任务线下的全部任务，按日期 + 起始时间排。 */
+    val questTasks: StateFlow<List<TaskEntity>> = selectedQuestId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else db.taskDao().observeByQuest(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val runningSession = db.sessionDao().observeOpenSession()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun openQuest(quest: QuestEntity) {
+        selectedQuestId.value = quest.id
+    }
+
+    fun closeQuest() {
+        selectedQuestId.value = null
+    }
+
+    /**
+     * 从任务线详情直接开始某个任务的专注（不限当天，提前开工也允许）。
+     * 开始后由界面切到今日屏，那里有计时卡，所以这里不再弹 snackbar。
+     */
+    fun startTimer(task: TaskEntity) {
+        TimerService.start(getApplication(), task.id, task.title)
+        viewModelScope.launch { CiWidgetUpdater.updateAll(getApplication()) }
+    }
+
+    /**
+     * 从任务线本身开工。
+     *
+     * 支线是打卡型的，本来就不排时间块，但光记一条无任务的 session 事后查不到，
+     * 所以就地补一个挂在这条支线上的任务再计时（见 [checkinTaskOf]，
+     * 刻意不挂到它归属的主线上）。主线一般已有排好的时间块，
+     * 从主线直接开工属于临时加练，仍走不挂任务的自由专注。
+     */
+    fun startQuestFocus(quest: QuestEntity) {
+        viewModelScope.launch {
+            // 计时是全局单例，已有在跑就别往库里塞一个永远开不了工的打卡块
+            if (db.sessionDao().openSession() != null) {
+                message.value = "已有进行中的专注，结束后才能开始新任务"
+                return@launch
+            }
+            if (quest.type == QuestType.SIDE) {
+                val now = System.currentTimeMillis()
+                val task = checkinTaskOf(
+                    quest = quest,
+                    nowEpochDay = TimeFormat.millisToEpochDay(now),
+                    nowMinute = TimeFormat.millisToMinuteOfDay(now),
+                )
+                val taskId = db.taskDao().insert(task)
+                TimerService.start(getApplication(), taskId, quest.title)
+            } else {
+                TimerService.start(getApplication(), null, quest.title, quest.id)
+            }
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    fun skipTask(task: TaskEntity) {
+        viewModelScope.launch {
+            db.taskDao().update(task.copy(status = TaskStatus.SKIPPED))
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /** 任务线详情里点开任务卡改完存回。 */
+    fun saveTask(task: TaskEntity) {
+        viewModelScope.launch {
+            if (task.id == 0L) db.taskDao().insert(task) else db.taskDao().update(task)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    fun deleteTask(task: TaskEntity) {
+        viewModelScope.launch {
+            db.taskDao().delete(task)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
 
     fun saveQuest(quest: QuestEntity) {
         viewModelScope.launch {
@@ -68,8 +163,44 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { db.questDao().update(quest.copy(status = QuestStatus.ARCHIVED)) }
     }
 
-    fun addDomain(name: String) {
-        viewModelScope.launch { db.domainDao().insert(DomainEntity(name = name)) }
+    /**
+     * 彻底删掉一条任务线。
+     *
+     * 它下面的具体任务只解除关联、不删除——那些时间块背后挂着 session 与流水，
+     * 是真实发生过的投入，删任务线不该把历史一并抹掉；挂靠它的支线同样只松开归属。
+     */
+    fun deleteQuest(quest: QuestEntity) {
+        viewModelScope.launch {
+            db.taskDao().detachFromQuest(quest.id)
+            db.questDao().detachChildren(quest.id)
+            db.questDao().delete(quest)
+            closeQuest()
+            message.value = "已删除「${quest.title}」，它排出的时间块保留在日程里"
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    /** 从「已完成」里捞回来接着做。主线满 2 条时拒绝，规则与新建一致。 */
+    fun restoreQuest(quest: QuestEntity) {
+        viewModelScope.launch {
+            if (quest.type == QuestType.MAIN) {
+                val activeMains = db.questDao().activeByType(QuestType.MAIN)
+                    .filter { it.id != quest.id }
+                if (activeMains.size >= 2) {
+                    message.value = "主线最多同时进行 2 条，先完成或归档一条吧"
+                    return@launch
+                }
+            }
+            db.questDao().update(quest.copy(status = QuestStatus.ACTIVE))
+        }
+    }
+
+    /** [onCreated] 给任务卡里的「或新建领域」用：建完把新 id 回填进任务再存。 */
+    fun addDomain(name: String, onCreated: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val id = db.domainDao().insert(DomainEntity(name = name))
+            onCreated(id)
+        }
     }
 
     fun dismissMessage() {
