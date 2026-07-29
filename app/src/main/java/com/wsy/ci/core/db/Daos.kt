@@ -120,6 +120,16 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE endAt IS NULL ORDER BY startAt DESC LIMIT 1")
     fun observeOpenSession(): Flow<SessionEntity?>
 
+    /**
+     * 某个任务名下所有已结束专注的毫秒合计，任务卡的「学习了多久」用。
+     * 只 SUM 毫秒、分钟换算留给 Kotlin，避免 SQLite 整数除法在每条记录上各截断一次。
+     */
+    @Query(
+        "SELECT COALESCE(SUM(endAt - startAt), 0) FROM sessions " +
+            "WHERE taskId = :taskId AND endAt IS NOT NULL"
+    )
+    fun observeFocusMillis(taskId: Long): Flow<Long>
+
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun byId(id: Long): SessionEntity?
 

@@ -78,6 +78,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     val balance: StateFlow<Long> = db.ledgerDao().observeBalance()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
+    /** 某任务累计学习分钟（含历次专注），任务卡展示用。 */
+    fun focusMinutes(taskId: Long) = db.sessionDao().observeFocusMillis(taskId)
+        .map { TimeFormat.millisToMinutes(it) }
+
     /** 最近一次结算结果，驱动入账提示与升级庆祝弹窗。 */
     val lastSettlement = MutableStateFlow<Settlement?>(null)
 

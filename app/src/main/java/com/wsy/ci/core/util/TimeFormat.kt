@@ -7,6 +7,7 @@ import java.time.ZoneId
 import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 object TimeFormat {
     private val dateFmt = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
@@ -41,6 +42,10 @@ object TimeFormat {
         minutes % 60 == 0 -> "${minutes / 60}小时"
         else -> "${minutes / 60}小时${minutes % 60}分"
     }
+
+    /** 毫秒时长 → 分钟，四舍五入，与结算时的口径一致（负数按 0 算）。 */
+    fun millisToMinutes(millis: Long): Int =
+        (millis / 60_000.0).roundToInt().coerceAtLeast(0)
 
     fun elapsed(millis: Long): String {
         val totalSec = millis / 1000

@@ -183,12 +183,16 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             onDismiss = { freeSession = null },
             onCreateDomain = viewModel::addDomain,
             deleteLabel = "删除这段记录",
+            focusedMinutes = sessionMinutes(session, nowTick),
         )
     }
 
     detailTask?.let { task ->
+        val minutes by remember(task.id) { viewModel.focusMinutes(task.id) }
+            .collectAsState(initial = 0)
         TaskDetailDialog(
             task = task,
+            focusedMinutes = minutes,
             isTimerRunning = running != null,
             onStart = { viewModel.startTimer(task); detailTask = null },
             onEdit = { editing = task; detailTask = null },
@@ -219,8 +223,8 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
  * 状态直接给「已完成」——这段时间是真的投入过了，不是待办。
  */
 private fun freeSessionDraft(session: SessionEntity, nowMillis: Long): TaskEntity {
-    val end = session.endAt ?: nowMillis
-    val minutes = ((end - session.startAt) / 60_000L).toInt().coerceAtLeast(1)
+    // 至少给 1 分钟：零长度的时间块在时间线上是看不见的
+    val minutes = sessionMinutes(session, nowMillis).coerceAtLeast(1)
     val startMinute = TimeFormat.millisToMinuteOfDay(session.startAt)
     return TaskEntity(
         title = "",
@@ -232,6 +236,10 @@ private fun freeSessionDraft(session: SessionEntity, nowMillis: Long): TaskEntit
         status = TaskStatus.DONE,
     )
 }
+
+/** 一次专注实际投入的分钟数；还没收工就算到此刻。 */
+private fun sessionMinutes(session: SessionEntity, nowMillis: Long): Int =
+    TimeFormat.millisToMinutes((session.endAt ?: nowMillis) - session.startAt)
 
 /** 进行中计时卡：领域 chip + 标题｜大号计时器｜结束按钮。 */
 @Composable

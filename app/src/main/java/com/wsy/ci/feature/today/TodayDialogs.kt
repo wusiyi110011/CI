@@ -46,6 +46,7 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.tabularNums
+import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.util.TimeFormat
 
@@ -122,16 +123,22 @@ private const val RING_START_SCALE = 0.6f
 private const val RING_END_SCALE = 1.9f
 private const val RING_START_ALPHA = 0.65f
 
+/**
+ * 任务卡。[focusedMinutes] 是这个任务名下所有已结束专注的分钟合计，>0 时显式展示。
+ *
+ * 三个动作回调都可空：复盘屏点开的是历史任务，只看不动，就一个都不传。
+ */
 @Composable
 internal fun TaskDetailDialog(
     task: TaskEntity,
-    isTimerRunning: Boolean,
-    onStart: () -> Unit,
-    onEdit: () -> Unit,
-    onSkip: () -> Unit,
     onDismiss: () -> Unit,
+    focusedMinutes: Int = 0,
+    isTimerRunning: Boolean = false,
+    onStart: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
+    onSkip: (() -> Unit)? = null,
 ) {
-    val canStart = task.status == TaskStatus.PLANNED && !isTimerRunning
+    val canStart = onStart != null && task.status == TaskStatus.PLANNED && !isTimerRunning
     CiFormDialog(
         title = task.title,
         onDismiss = onDismiss,
@@ -146,6 +153,7 @@ internal fun TaskDetailDialog(
                     TimeFormat.minuteOfDay(task.endMinute),
                 style = MaterialTheme.typography.bodyLarge.tabularNums(),
             )
+            CiFocusedMinutesLine(focusedMinutes)
             Text(
                 text = "难度：${task.difficulty.label} ×${task.difficulty.factor}" +
                     " · 状态：${task.status.label}",
@@ -162,17 +170,37 @@ internal fun TaskDetailDialog(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Row(
-                modifier = Modifier.padding(top = CiSpacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-            ) {
-                TextButton(onClick = onEdit) { Text("编辑") }
-                if (task.status == TaskStatus.PLANNED) {
-                    TextButton(onClick = onSkip) { Text("跳过") }
+            if (onEdit != null || (onSkip != null && task.status == TaskStatus.PLANNED)) {
+                Row(
+                    modifier = Modifier.padding(top = CiSpacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    onEdit?.let { TextButton(onClick = it) { Text("编辑") } }
+                    if (task.status == TaskStatus.PLANNED) {
+                        onSkip?.let { TextButton(onClick = it) { Text("跳过") } }
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * 「学习了多久」那一行。单位固定用分钟——任务卡上要的是可直接跟阶梯倍率
+ * （30/60 分钟两道坎）对照的数字，换算成「1小时20分」反而要在脑子里再折回去。
+ *
+ * 只报分钟不报倍率：这里是一个任务名下多次专注的合计，而倍率是按单次专注算的，
+ * 拿合计分钟去反推倍率会虚高（分三次坐满 90 分钟并不等于一口气坐 90 分钟）。
+ * 单次的倍率在结算弹窗里给。[minutes] 为 0 时整行不画。
+ */
+@Composable
+internal fun CiFocusedMinutesLine(minutes: Int) {
+    if (minutes <= 0) return
+    Text(
+        text = "已学习 $minutes 分钟",
+        style = MaterialTheme.typography.bodyLarge.tabularNums(),
+        color = MaterialTheme.colorScheme.tertiary,
+    )
 }
 
 /**
@@ -210,6 +238,13 @@ internal fun StopFocusDialog(onPick: (FocusOutcome, String) -> Unit, onDismiss: 
     }
 }
 
+/** 坐满 30 分钟才有阶梯加成，没跨过第一道坎就不提倍率，免得写一串「×1.00」。 */
+private fun durationMultiplierSuffix(minutes: Int): String {
+    val multiplier = Economy.durationMultiplier(minutes)
+    if (multiplier <= 1.0) return ""
+    return " · 时长倍率 ×${"%.2f".format(multiplier)}"
+}
+
 @Composable
 internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
     val isLevelUp = settlement.newLevel != null
@@ -235,7 +270,8 @@ internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
             textAlign = TextAlign.Center,
         )
         Text(
-            text = "专注 ${TimeFormat.duration(settlement.minutes)}" +
+            text = "专注 ${settlement.minutes} 分钟" +
+                durationMultiplierSuffix(settlement.minutes) +
                 if (settlement.expGained > 0) " · 经验 +${settlement.expGained}" else "",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

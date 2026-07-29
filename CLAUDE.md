@@ -67,8 +67,9 @@ Room `version = 1` 且 `exportSchema = false`，目前没有 migration。改 Ent
 
 [Economy.kt](app/src/main/java/com/wsy/ci/core/economy/Economy.kt) 是纯函数集合，所有公式和阈值都在这里，**不要把奖励计算散到 Repository 或 UI 里**。
 
-- CI 币 = 实际分钟 × 难度系数 × 专注系数 × (1 + 连击加成)，向下取整
-- 经验 = 实际分钟 × 难度系数（与 CI 币双轨，只增不减）
+- CI 币 = 加权分钟 × 难度系数 × 专注系数 × (1 + 连击加成)，向下取整
+- 加权分钟按单次专注时长分段累加：前 30 分钟 ×1、30–60 分钟 ×1.5、超过 60 分钟 ×2（`Economy.weightedMinutes`）
+- 经验 = **实际**分钟 × 难度系数（不吃时长阶梯，否则等级门槛失真；与 CI 币双轨，只增不减）
 - 锚定汇率 1 元 ≈ 20 CI
 
 结算的落地在 [TimerRepository.stopSession](app/src/main/java/com/wsy/ci/core/data/TimerRepository.kt)：一次调用里同时写 session、更新任务状态、记流水、结算领域经验与升级奖励、维护支线连击。

@@ -141,7 +141,10 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
             .byTimeRange(TimeFormat.dayStartMillis(fromDay), TimeFormat.dayEndMillis(toDay))
         val domains = db.domainDao().observeAll().first()
 
-        val minutesOf = { s: SessionEntity -> (((s.endAt ?: s.startAt) - s.startAt) / 60_000).toInt() }
+        // 与结算、任务卡同一套换算（四舍五入），免得同一次专注在两处显示差一分钟
+        val minutesOf = { s: SessionEntity ->
+            TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
+        }
         val totalMinutes = sessions.sumOf(minutesOf)
 
         val domainName = domains.associateBy({ it.id }, { it })

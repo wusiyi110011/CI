@@ -50,9 +50,36 @@ object Economy {
         else -> 0.0
     }
 
+    private const val DURATION_TIER1_MINUTES = 30
+    private const val DURATION_TIER2_MINUTES = 60
+    private const val DURATION_TIER2_RATE = 1.5
+    private const val DURATION_TIER3_RATE = 2.0
+
     /**
-     * 单次任务 CI 币 = 实际分钟 × 难度系数 × 专注系数 × (1 + 连击加成)，向下取整。
-     * 连击加成仅支线任务传入非零 streakDays。
+     * 时长阶梯加权后的分钟数：单次专注坐得越久，后面的分钟越值钱。
+     * 前 30 分钟 ×1，第 30–60 分钟 ×1.5，超过 60 分钟的部分 ×2，分段累加而非整段跳档。
+     *
+     * 例：40 分钟 = 30×1 + 10×1.5 = 45；90 分钟 = 30×1 + 30×1.5 + 30×2 = 135。
+     *
+     * 只作用于 CI 币，不动经验——经验是「投入了多少时间」的诚实记录，
+     * 加了阶梯就不再是分钟数的线性映射，等级门槛也会跟着失真。
+     */
+    fun weightedMinutes(actualMinutes: Int): Double {
+        if (actualMinutes <= 0) return 0.0
+        val tier1 = minOf(actualMinutes, DURATION_TIER1_MINUTES)
+        val tier2 = (minOf(actualMinutes, DURATION_TIER2_MINUTES) - DURATION_TIER1_MINUTES)
+            .coerceAtLeast(0)
+        val tier3 = (actualMinutes - DURATION_TIER2_MINUTES).coerceAtLeast(0)
+        return tier1 + tier2 * DURATION_TIER2_RATE + tier3 * DURATION_TIER3_RATE
+    }
+
+    /** 本次专注的整体时长倍率（加权分钟 / 实际分钟），给 UI 展示用；0 分钟兜底为 1。 */
+    fun durationMultiplier(actualMinutes: Int): Double =
+        if (actualMinutes <= 0) 1.0 else weightedMinutes(actualMinutes) / actualMinutes
+
+    /**
+     * 单次任务 CI 币 = 加权分钟 × 难度系数 × 专注系数 × (1 + 连击加成)，向下取整。
+     * 加权分钟见 [weightedMinutes]；连击加成仅支线任务传入非零 streakDays。
      */
     fun taskReward(
         actualMinutes: Int,
@@ -61,7 +88,7 @@ object Economy {
         streakDays: Int = 0,
     ): Long {
         if (actualMinutes <= 0) return 0
-        val base = actualMinutes * difficulty.factor * focus.factor
+        val base = weightedMinutes(actualMinutes) * difficulty.factor * focus.factor
         return floor(base * (1 + streakBonus(streakDays))).toLong()
     }
 
