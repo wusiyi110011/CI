@@ -39,7 +39,12 @@ import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import com.wsy.ci.core.util.TimeFormat
 
-/** 任务新建/编辑对话框。时间输入用 HH:mm 文本（平板键盘输入效率高于滚轮）。 */
+/**
+ * 任务新建/编辑对话框。时间输入用 HH:mm 文本（平板键盘输入效率高于滚轮）。
+ *
+ * [focusedMinutes] >0 时在最上面标出这段时间实际学了多久——自由专注补录卡走的就是
+ * 这个对话框，那张卡上必须能看见刚才那次专注的分钟数。
+ */
 @Composable
 fun TaskEditorDialog(
     initial: TaskEntity,
@@ -50,6 +55,7 @@ fun TaskEditorDialog(
     onDismiss: () -> Unit,
     onCreateDomain: (String, (Long) -> Unit) -> Unit,
     deleteLabel: String = "删除",
+    focusedMinutes: Int = 0,
 ) {
     var title by remember { mutableStateOf(initial.title) }
     var date by remember { mutableStateOf(formatDate(initial.epochDay)) }
@@ -72,6 +78,7 @@ fun TaskEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
+                CiFocusedMinutesLine(focusedMinutes)
                 CiFormField(
                     value = title, onValueChange = { title = it },
                     label = "任务名", singleLine = true,

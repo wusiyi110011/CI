@@ -69,6 +69,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -145,6 +146,10 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             CiWidgetUpdater.updateAll(getApplication())
         }
     }
+
+    /** 某任务累计学习分钟（含历次专注），任务卡展示用。 */
+    fun focusMinutes(taskId: Long) = db.sessionDao().observeFocusMillis(taskId)
+        .map { TimeFormat.millisToMinutes(it) }
 
     /** 从日程屏直接开始某个任务的专注（不限当天，提前开工也允许）。 */
     fun startTimer(task: TaskEntity) {
@@ -265,8 +270,11 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
     }
 
     detailTask?.let { task ->
+        val focusedMinutes by remember(task.id) { viewModel.focusMinutes(task.id) }
+            .collectAsState(initial = 0)
         TaskDetailDialog(
             task = task,
+            focusedMinutes = focusedMinutes,
             isTimerRunning = running != null,
             onStart = { viewModel.startTimer(task); detailTask = null },
             onEdit = { editing = task; detailTask = null },

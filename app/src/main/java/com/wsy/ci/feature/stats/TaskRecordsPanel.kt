@@ -67,6 +67,7 @@ fun TaskRecordsPanel(
     domainFilter: DomainFilter,
     onStatusFilter: (RecordFilter) -> Unit,
     onDomainFilter: (DomainFilter) -> Unit,
+    onRecordClick: (TaskRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val filtered = filterRecords(records, statusFilter, domainFilter)
@@ -100,7 +101,9 @@ fun TaskRecordsPanel(
         } else {
             RecordHeaderRow()
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                filtered.forEach { RecordRow(it) }
+                filtered.forEach { record ->
+                    RecordRow(record, onClick = { onRecordClick(record) })
+                }
             }
         }
     }
@@ -192,12 +195,18 @@ private fun HeaderCell(text: String, modifier: Modifier, align: TextAlign = Text
     )
 }
 
-/** 明细单行；备注非空时在标题下方另起一行完整展示（复盘内容不截断）。 */
+/**
+ * 明细单行；备注非空时在标题下方另起一行完整展示（复盘内容不截断）。
+ * 整行可点，点开这条任务的任务卡（含实际学了多久）。
+ */
 @Composable
-private fun RecordRow(record: TaskRecord) {
+private fun RecordRow(record: TaskRecord, onClick: () -> Unit) {
     val task = record.task
     val accent = CiTheme.colors.taskBlock(task.status).accent
-    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+    Column(
+        modifier = Modifier.clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

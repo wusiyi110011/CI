@@ -25,7 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +47,7 @@ import com.wsy.ci.core.designsystem.HeatScale
 import com.wsy.ci.core.designsystem.formatSignedAmount
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.feature.today.TaskDetailDialog
 
 /** 面板高度，取自逐屏布局规格第 5 节。 */
 private val BAR_PANEL_HEIGHT = 260.dp
@@ -68,6 +71,8 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
     val analyzing by viewModel.analyzing.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+    /** 明细里点开的那条任务，展示只读任务卡。 */
+    var detailRecord by remember { mutableStateOf<TaskRecord?>(null) }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(message) {
@@ -123,6 +128,7 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                         domainFilter = domainFilter,
                         onStatusFilter = viewModel::setRecordFilter,
                         onDomainFilter = viewModel::setDomainFilter,
+                        onRecordClick = { detailRecord = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
@@ -138,6 +144,17 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                 }
             }
         }
+    }
+
+    // 复盘是回看，不提供开始/编辑/跳过——那些动作留在今日与日程屏。
+    // 分钟数直接取明细行已经算好的 actualMinutes（本周期内的合计），
+    // 好处是卡片上的数字与它下面那一行「实际」列永远对得上。
+    detailRecord?.let { record ->
+        TaskDetailDialog(
+            task = record.task,
+            focusedMinutes = record.actualMinutes,
+            onDismiss = { detailRecord = null },
+        )
     }
 
     analysis?.let {
