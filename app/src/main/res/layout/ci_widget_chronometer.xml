@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  计时态的跳秒数字。Glance 的 Text 不会自己走秒，只能嵌一个原生 Chronometer
+  （RemoteViews 白名单内的 View，由系统侧自行刷新），见 FocusingCard。
+  字号写在这里，颜色在代码里按当前主题 setTextColor，避免字面量颜色。
+-->
+<Chronometer xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ci_widget_chronometer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:textSize="26sp"
+    android:fontFamily="sans-serif-medium" />
