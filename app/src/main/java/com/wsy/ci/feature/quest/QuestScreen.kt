@@ -80,6 +80,7 @@ fun QuestScreen(
     val domains by viewModel.domains.collectAsState()
     val message by viewModel.message.collectAsState()
     val routeGen by viewModel.routeGen.collectAsState()
+    val importPending by viewModel.importPending.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val selectedQuestId by viewModel.selectedQuestId.collectAsState()
     val questTasks by viewModel.questTasks.collectAsState()
@@ -257,10 +258,16 @@ fun QuestScreen(
 
     if (showImport) {
         ImportDialog(
+            preview = importPending?.preview,
             result = importResult,
-            onImport = viewModel::importJson,
+            onPreview = viewModel::previewImport,
+            onConfirm = viewModel::confirmImport,
+            onCancelPreview = viewModel::cancelImportPreview,
             onDismissResult = viewModel::dismissImportResult,
-            onDismiss = { showImport = false },
+            onDismiss = {
+                viewModel.cancelImportPreview()
+                showImport = false
+            },
         )
     }
 

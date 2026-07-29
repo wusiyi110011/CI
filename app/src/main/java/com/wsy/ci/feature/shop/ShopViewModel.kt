@@ -10,9 +10,11 @@ import com.wsy.ci.core.db.LedgerEntity
 import com.wsy.ci.core.db.PurchaseEntity
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.economy.Rarity
+import com.wsy.ci.core.porting.ImportPreview
 import com.wsy.ci.core.porting.ImportShopItem
 import com.wsy.ci.core.porting.ShopImport
 import com.wsy.ci.core.porting.ShopImportResult
+import com.wsy.ci.core.porting.previewShop
 import com.wsy.ci.core.shop.FulfillFilter
 import com.wsy.ci.core.shop.PurchaseFilter
 import com.wsy.ci.core.shop.TimeFilter
@@ -155,17 +157,39 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- 粘贴上架（一次导入一批奖励） ----------
 
+    /** 校验通过、等用户点「确认导入」的一批商品。 */
+    data class ImportPending(val items: List<ImportShopItem>, val preview: ImportPreview)
+
+    /** 待确认的上架清单；null 表示还停在粘贴框。 */
+    val importPending = MutableStateFlow<ImportPending?>(null)
+
     /** 导入结果文案；null 表示还没导入。以 ✅ 开头表示成功。 */
     val importResult = MutableStateFlow<String?>(null)
 
-    fun importItems(text: String) {
+    /** 只校验、只出清单，货架先不动——上架要等 [confirmImport]。 */
+    fun previewImport(text: String) {
         viewModelScope.launch {
-            importResult.value = when (val parsed = ShopImport.parse(text)) {
+            when (val parsed = ShopImport.parse(text)) {
                 is ShopImportResult.Err ->
-                    "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
-                is ShopImportResult.Ok -> applyImport(parsed.items)
+                    importResult.value = "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
+                is ShopImportResult.Ok -> importPending.value = ImportPending(
+                    items = parsed.items,
+                    preview = previewShop(parsed.items, repo.allItemNames().toSet()),
+                )
             }
         }
+    }
+
+    fun confirmImport() {
+        val pending = importPending.value ?: return
+        viewModelScope.launch {
+            importResult.value = applyImport(pending.items)
+            importPending.value = null
+        }
+    }
+
+    fun cancelImportPreview() {
+        importPending.value = null
     }
 
     /** 按商品名跳过已有的（含已下架的），免得重复粘贴把货架撑成两份。 */
@@ -184,5 +208,6 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissImportResult() {
         importResult.value = null
+        importPending.value = null
     }
 }
