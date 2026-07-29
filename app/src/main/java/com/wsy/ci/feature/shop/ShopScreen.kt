@@ -116,6 +116,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
     val purchaseFilter by viewModel.purchaseFilter.collectAsState()
     val message by viewModel.message.collectAsState()
     val aiPrice by viewModel.aiPrice.collectAsState()
+    val importPending by viewModel.importPending.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
 
     var tab by remember { mutableStateOf(ShopTab.PICKS) }
@@ -225,13 +226,19 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
         CiPasteImportDialog(
             title = "📥 粘贴批量上架",
             hint = "把「复制模板」的内容发给任何 AI（或自己写），列好想要的奖励后粘贴到下面。" +
-                "同名商品会自动跳过。",
+                "校验通过后会先列出要上架的商品，确认了才真上架；同名商品会自动跳过。",
             template = ShopImport.TEMPLATE,
             pasteLabel = "粘贴商品 JSON",
+            preview = importPending?.preview,
             result = importResult,
-            onImport = viewModel::importItems,
+            onPreview = viewModel::previewImport,
+            onConfirm = viewModel::confirmImport,
+            onCancelPreview = viewModel::cancelImportPreview,
             onDismissResult = viewModel::dismissImportResult,
-            onDismiss = { showImport = false },
+            onDismiss = {
+                viewModel.cancelImportPreview()
+                showImport = false
+            },
         )
     }
 

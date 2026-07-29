@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.core.porting.ImportPreview
 
 /** 粘贴框的最小与常规高度：平板上一屏能看下十来行 JSON。 */
 private val PASTE_FIELD_MIN_HEIGHT = 200.dp
@@ -31,7 +32,10 @@ private val PASTE_FIELD_HEIGHT = 280.dp
  * 通用「粘贴 JSON 导入」对话框：复制模板 → 喂给任意聊天 AI → 粘回来校验落库。
  *
  * 学习计划与商城货架是两套格式，但交互完全一样，所以外壳做成参数化的：
- * [template] 是丢给 AI 的格式说明，[result] 由调用方在导入后回填（以 ✅ 开头视为成功）。
+ * [template] 是丢给 AI 的格式说明。
+ *
+ * 三步走，[preview] 与 [result] 由调用方回填决定当前停在哪一步：
+ * 粘贴 → 校验出清单让用户过目（[preview] 非空）→ 确认后落库并报结果（[result] 非空，以 ✅ 开头视为成功）。
  */
 @Composable
 fun CiPasteImportDialog(
@@ -39,8 +43,11 @@ fun CiPasteImportDialog(
     hint: String,
     template: String,
     pasteLabel: String,
+    preview: ImportPreview?,
     result: String?,
-    onImport: (String) -> Unit,
+    onPreview: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onCancelPreview: () -> Unit,
     onDismissResult: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -58,6 +65,23 @@ fun CiPasteImportDialog(
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(result) }
             },
             confirmButton = { TextButton(onClick = close) { Text("知道了") } },
+        )
+        return
+    }
+
+    if (preview != null) {
+        // 关掉预览退回粘贴框，而不是整个关闭：内容还在，用户可以改完再来一次
+        AlertDialog(
+            shape = CiShapes.dialog,
+            onDismissRequest = onCancelPreview,
+            title = { Text("确认导入内容") },
+            text = { ImportPreviewBody(preview) },
+            confirmButton = {
+                Button(onClick = onConfirm, enabled = preview.sections.isNotEmpty()) {
+                    Text("确认导入")
+                }
+            },
+            dismissButton = { TextButton(onClick = onCancelPreview) { Text("返回修改") } },
         )
         return
     }
@@ -95,8 +119,44 @@ fun CiPasteImportDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onImport(text) }, enabled = text.isNotBlank()) { Text("校验并导入") }
+            Button(onClick = { onPreview(text) }, enabled = text.isNotBlank()) { Text("校验并预览") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+/** 预览正文：一句总结 + 分段明细 + 知会项，长了自己滚。 */
+@Composable
+private fun ImportPreviewBody(preview: ImportPreview) {
+    Column(
+        modifier = Modifier
+            .heightIn(max = CiSizes.dialogScrollMaxHeight)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+    ) {
+        Text(text = preview.summary, style = MaterialTheme.typography.titleSmall)
+        preview.sections.forEach { section ->
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Text(
+                    text = section.heading,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                section.lines.forEach { line ->
+                    Text(
+                        text = "· $line",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        preview.warnings.forEach { warning ->
+            Text(
+                text = "⚠️ $warning",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+    }
 }

@@ -12,7 +12,10 @@ import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.porting.CiImport
+import com.wsy.ci.core.porting.CiImportFile
 import com.wsy.ci.core.porting.ImportParseResult
+import com.wsy.ci.core.porting.ImportPreview
+import com.wsy.ci.core.porting.previewPlan
 import com.wsy.ci.core.quest.checkinTaskOf
 import com.wsy.ci.core.title.Titles
 import com.wsy.ci.core.util.TimeFormat
@@ -261,26 +264,68 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- JSON 导入（外部/AI 设计好的计划一键落库） ----------
 
+    /** 校验通过、等用户点「确认导入」的一批内容。 */
+    data class ImportPending(val file: CiImportFile, val preview: ImportPreview)
+
+    /** 待确认的导入清单；null 表示还停在粘贴框。 */
+    val importPending = MutableStateFlow<ImportPending?>(null)
+
     /** 返回给导入对话框的结果：null 表示尚未导入。 */
     val importResult = MutableStateFlow<String?>(null)
 
-    fun importJson(text: String) {
+    /** 只校验、只出清单，一个字都不写库——落库要等 [confirmImport]。 */
+    fun previewImport(text: String) {
         viewModelScope.launch {
             when (val parsed = CiImport.parse(text)) {
                 is ImportParseResult.Err -> {
                     importResult.value = "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
                 }
-                is ImportParseResult.Ok -> importResult.value = applyImport(parsed.file)
+                is ImportParseResult.Ok -> {
+                    val file = parsed.file
+                    val mainLimitError = checkMainLimit(file)
+                    if (mainLimitError != null) {
+                        importResult.value = mainLimitError
+                        return@launch
+                    }
+                    importPending.value = ImportPending(
+                        file = file,
+                        // 复用/引用的判定口径要和 applyImport 里一致，否则预览说得和实际做的不是一回事
+                        preview = previewPlan(
+                            file = file,
+                            existingDomainNames = db.domainDao().observeAll().first()
+                                .map { it.name }.toSet(),
+                            existingQuestTitles = db.questDao().observeAll().first()
+                                .map { it.title }.toSet(),
+                        ),
+                    )
+                }
             }
         }
     }
 
-    private suspend fun applyImport(file: com.wsy.ci.core.porting.CiImportFile): String {
-        val importingMains = file.quests.count { it.type == "MAIN" }
-        val activeMains = db.questDao().activeByType(QuestType.MAIN).size
-        if (activeMains + importingMains > 2) {
-            return "❌ 主线最多同时 2 条：当前已有 $activeMains 条，导入含 $importingMains 条"
+    fun confirmImport() {
+        val pending = importPending.value ?: return
+        viewModelScope.launch {
+            importResult.value = applyImport(pending.file)
+            importPending.value = null
         }
+    }
+
+    fun cancelImportPreview() {
+        importPending.value = null
+    }
+
+    /** 主线上限 2 条，超了就没必要让用户过目清单了，直接拦在预览之前。 */
+    private suspend fun checkMainLimit(file: CiImportFile): String? {
+        val importingMains = file.quests.count { it.type == "MAIN" }
+        if (importingMains == 0) return null
+        val activeMains = db.questDao().activeByType(QuestType.MAIN).size
+        if (activeMains + importingMains <= 2) return null
+        return "❌ 主线最多同时 2 条：当前已有 $activeMains 条，导入含 $importingMains 条"
+    }
+
+    private suspend fun applyImport(file: CiImportFile): String {
+        checkMainLimit(file)?.let { return it }
 
         // 领域：按名字复用或新建；头衔线只在原来为空时覆盖
         var domainId: Long? = null
@@ -354,5 +399,6 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissImportResult() {
         importResult.value = null
+        importPending.value = null
     }
 }
