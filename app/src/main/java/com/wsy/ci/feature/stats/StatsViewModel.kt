@@ -4,16 +4,16 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
+import com.wsy.ci.core.designsystem.UNCLASSIFIED_DOMAIN_COLOR_ARGB
 import com.wsy.ci.core.db.LedgerType
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
+import com.wsy.ci.core.stats.sessionMinuteBuckets
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -151,27 +151,21 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val byDomain = sessions.groupBy { it.domainId }
             .map { (id, list) ->
                 val d = id?.let { domainName[it] }
-                DomainStat(d?.name ?: "未分类", list.sumOf(minutesOf), d?.colorArgb ?: 0xFF9E9E9E)
+                DomainStat(
+                    d?.name ?: "未分类",
+                    list.sumOf(minutesOf),
+                    d?.colorArgb ?: UNCLASSIFIED_DOMAIN_COLOR_ARGB,
+                )
             }
             .sortedByDescending { it.minutes }
 
         val heat = List(7) { IntArray(24) }
         val minutesByDay = mutableMapOf<Long, Int>()
         sessions.forEach { s ->
-            val start = Instant.ofEpochMilli(s.startAt).atZone(ZoneId.systemDefault())
-            val dow = start.dayOfWeek.value - 1
-            var remaining = minutesOf(s)
-            var hour = start.hour
-            var minuteInHour = start.minute
-            while (remaining > 0 && hour < 24) {
-                val inThisHour = minOf(remaining, 60 - minuteInHour)
-                heat[dow][hour] += inThisHour
-                remaining -= inThisHour
-                hour++
-                minuteInHour = 0
+            sessionMinuteBuckets(s.startAt, minutesOf(s)).forEach { bucket ->
+                heat[bucket.dayOfWeekIndex][bucket.hour]++
+                minutesByDay[bucket.epochDay] = (minutesByDay[bucket.epochDay] ?: 0) + 1
             }
-            val day = TimeFormat.millisToEpochDay(s.startAt)
-            minutesByDay[day] = (minutesByDay[day] ?: 0) + minutesOf(s)
         }
 
         val sessionsByTask = sessions.groupBy { it.taskId }
@@ -243,7 +237,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 val csv = buildString {
                     appendLine("date,start,end,task,minutes,reward_ci,exp")
                     sessions.forEach { s ->
-                        val mins = (((s.endAt ?: s.startAt) - s.startAt) / 60_000).toInt()
+                        val mins = TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
                         appendLine(
                             listOf(
                                 LocalDate.ofEpochDay(TimeFormat.millisToEpochDay(s.startAt)),

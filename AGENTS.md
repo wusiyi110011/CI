@@ -55,7 +55,7 @@ Room DAO 暴露 `Flow` → ViewModel 用 `stateIn(viewModelScope, SharingStarted
 - 「当天的几点」用 `startMinute` / `endMinute: Int`（当日 0 点起的分钟数，区间左闭右开）
 - 「真实时刻」用 `Long` 毫秒时间戳（`sessions.startAt`、`ledger.at`）
 
-Room `version = 1` 且 `exportSchema = false`，目前没有 migration。改 Entity 会直接崩，开发期靠卸载重装。
+Room `version = 5` 且 `exportSchema = false`，已提供 `MIGRATION_1_2` 至 `MIGRATION_4_5`。以后修改 Entity 必须同步提升版本并补 migration，不能依赖卸载重装。
 
 ### 排程引擎
 

@@ -1,6 +1,7 @@
 package com.wsy.ci.core.porting
 
 import com.wsy.ci.core.economy.Difficulty
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import kotlinx.serialization.Serializable
@@ -112,8 +113,8 @@ object CiImport {
             val end = parseHm(t.end)
             if (start == null) errors.add("$where.start 格式应为 HH:mm")
             if (end == null) errors.add("$where.end 格式应为 HH:mm")
-            if (start != null && end != null && end <= start) {
-                errors.add("$where 结束时间必须晚于开始时间")
+            if (start != null && end != null && end == start) {
+                errors.add("$where 开始与结束时间不能相同")
             }
             if (parseDifficulty(t.difficulty) == null) {
                 errors.add("$where.difficulty 必须是 EASY/NORMAL/HARD/EPIC")
@@ -138,6 +139,10 @@ object CiImport {
         if (h !in 0..23 || m !in 0..59) return null
         return h * 60 + m
     }
+
+    /** 结束早于开始表示跨过午夜，转成相对起始日零点的分钟数。 */
+    fun normalizeEndMinute(startMinute: Int, endMinute: Int): Int =
+        if (endMinute < startMinute) endMinute + MINUTES_PER_DAY else endMinute
 
     fun parseDifficulty(text: String): Difficulty? =
         Difficulty.entries.firstOrNull { it.name == text.trim().uppercase() }

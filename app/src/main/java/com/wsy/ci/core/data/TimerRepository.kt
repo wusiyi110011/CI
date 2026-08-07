@@ -1,5 +1,6 @@
 package com.wsy.ci.core.data
 
+import androidx.room.withTransaction
 import com.wsy.ci.core.db.CiDatabase
 import com.wsy.ci.core.db.LedgerEntity
 import com.wsy.ci.core.db.LedgerType
@@ -48,27 +49,29 @@ class TimerRepository(private val db: CiDatabase) {
      * 提前开工的任务会连日期一起搬到今天，计划轨于是反映真实开工时间。
      */
     suspend fun startSession(taskId: Long?, questId: Long? = null): SessionEntity {
-        db.sessionDao().openSession()?.let { return it }
-        val now = System.currentTimeMillis()
-        val task = taskId?.let { db.taskDao().byId(it) }
-        // 没有具体任务时（对着支线直接打卡），领域从任务线上取
-        val quest = (task?.questId ?: questId)?.let { db.questDao().byId(it) }
-        val session = SessionEntity(
-            taskId = task?.id,
-            domainId = task?.domainId ?: quest?.domainId,
-            questId = quest?.id,
-            startAt = now,
-        )
-        val id = db.sessionDao().insert(session)
-        task?.let {
-            val aligned = alignedToNow(
-                task = it,
-                nowEpochDay = TimeFormat.millisToEpochDay(now),
-                nowMinute = TimeFormat.millisToMinuteOfDay(now),
+        return db.withTransaction {
+            db.sessionDao().openSession()?.let { return@withTransaction it }
+            val now = System.currentTimeMillis()
+            val task = taskId?.let { db.taskDao().byId(it) }
+            // 没有具体任务时（对着支线直接打卡），领域从任务线上取
+            val quest = (task?.questId ?: questId)?.let { db.questDao().byId(it) }
+            val session = SessionEntity(
+                taskId = task?.id,
+                domainId = task?.domainId ?: quest?.domainId,
+                questId = quest?.id,
+                startAt = now,
             )
-            db.taskDao().update(aligned.copy(status = TaskStatus.RUNNING))
+            val id = db.sessionDao().insert(session)
+            task?.let {
+                val aligned = alignedToNow(
+                    task = it,
+                    nowEpochDay = TimeFormat.millisToEpochDay(now),
+                    nowMinute = TimeFormat.millisToMinuteOfDay(now),
+                )
+                db.taskDao().update(aligned.copy(status = TaskStatus.RUNNING))
+            }
+            session.copy(id = id)
         }
-        return session.copy(id = id)
     }
 
     /**
@@ -77,55 +80,57 @@ class TimerRepository(private val db: CiDatabase) {
      * 自由专注没有任务可写，则落到本次入账的流水备注里，不静默丢弃。
      */
     suspend fun stopSession(focus: FocusOutcome, note: String = ""): Settlement? {
-        val session = db.sessionDao().openSession() ?: return null
-        val now = System.currentTimeMillis()
-        val minutes = ((now - session.startAt) / 60_000.0).roundToInt().coerceAtLeast(0)
-        val task = session.taskId?.let { db.taskDao().byId(it) }
-        val difficulty = task?.difficulty ?: Difficulty.NORMAL
+        return db.withTransaction {
+            val session = db.sessionDao().openSession() ?: return@withTransaction null
+            val now = System.currentTimeMillis()
+            val minutes = ((now - session.startAt) / 60_000.0).roundToInt().coerceAtLeast(0)
+            val task = session.taskId?.let { db.taskDao().byId(it) }
+            val difficulty = task?.difficulty ?: Difficulty.NORMAL
 
-        // 有任务以任务的归属为准，没有任务就用 session 上记的任务线（支线直接打卡）
-        val streakDays = updateStreakAndGet(task?.questId ?: session.questId, focus)
-        val reward = Economy.taskReward(minutes, difficulty, focus, streakDays)
-        val exp = Economy.expGain(minutes, difficulty)
+            // 有任务以任务的归属为准，没有任务就用 session 上记的任务线（支线直接打卡）
+            val streakDays = updateStreakAndGet(task?.questId ?: session.questId, focus)
+            val reward = Economy.taskReward(minutes, difficulty, focus, streakDays)
+            val exp = Economy.expGain(minutes, difficulty)
 
-        db.sessionDao().update(
-            session.copy(endAt = now, focus = focus, rewardCi = reward, expGained = exp)
-        )
-        val trimmedNote = note.trim()
-        task?.let {
-            val done = if (focus == FocusOutcome.ABANDONED) TaskStatus.PLANNED else TaskStatus.DONE
-            // 计划轨记真实收工时刻：开工时已对齐到此刻，收工时把终点也收到此刻
-            val ended = endedAt(
-                task = it,
-                endEpochDay = TimeFormat.millisToEpochDay(now),
-                endMinute = TimeFormat.millisToMinuteOfDay(now),
+            db.sessionDao().update(
+                session.copy(endAt = now, focus = focus, rewardCi = reward, expGained = exp)
             )
-            db.taskDao().update(
-                ended.copy(status = done, note = appendNote(it.note, trimmedNote))
-            )
-        }
-        if (reward > 0) {
-            db.ledgerDao().insert(
-                LedgerEntity(
-                    amount = reward,
-                    type = LedgerType.EARN_TASK,
-                    refId = session.id,
-                    note = task?.title ?: trimmedNote.ifBlank { "自由专注" },
+            val trimmedNote = note.trim()
+            task?.let {
+                val done = if (focus == FocusOutcome.ABANDONED) TaskStatus.PLANNED else TaskStatus.DONE
+                // 计划轨记真实收工时刻：开工时已对齐到此刻，收工时把终点也收到此刻
+                val ended = endedAt(
+                    task = it,
+                    endEpochDay = TimeFormat.millisToEpochDay(now),
+                    endMinute = TimeFormat.millisToMinuteOfDay(now),
                 )
+                db.taskDao().update(
+                    ended.copy(status = done, note = appendNote(it.note, trimmedNote))
+                )
+            }
+            if (reward > 0) {
+                db.ledgerDao().insert(
+                    LedgerEntity(
+                        amount = reward,
+                        type = LedgerType.EARN_TASK,
+                        refId = session.id,
+                        note = task?.title ?: trimmedNote.ifBlank { "自由专注" },
+                    )
+                )
+            }
+            val levelUp = settleExp(session.domainId ?: task?.domainId, exp)
+            val (checkinStreak, checkinReward) = settleCheckin(now, focus)
+            Settlement(
+                minutes = minutes,
+                rewardCi = reward,
+                expGained = exp,
+                domainId = session.domainId ?: task?.domainId,
+                newLevel = levelUp?.first,
+                levelUpRewardCi = levelUp?.second ?: 0,
+                checkinStreak = checkinStreak,
+                checkinRewardCi = checkinReward,
             )
         }
-        val levelUp = settleExp(session.domainId ?: task?.domainId, exp)
-        val (checkinStreak, checkinReward) = settleCheckin(now, focus)
-        return Settlement(
-            minutes = minutes,
-            rewardCi = reward,
-            expGained = exp,
-            domainId = session.domainId ?: task?.domainId,
-            newLevel = levelUp?.first,
-            levelUpRewardCi = levelUp?.second ?: 0,
-            checkinStreak = checkinStreak,
-            checkinRewardCi = checkinReward,
-        )
     }
 
     /**
@@ -135,12 +140,30 @@ class TimerRepository(private val db: CiDatabase) {
      * 连续打卡的判定搅乱。任务本身也不动——它是计划轨上的块，跟这条记录是两回事。
      */
     suspend fun deleteSession(sessionId: Long) {
-        val session = db.sessionDao().byId(sessionId) ?: return
-        db.ledgerDao().deleteTaskEarning(sessionId)
-        session.domainId?.takeIf { session.expGained > 0 }?.let { domainId ->
-            db.domainDao().addExp(domainId, -session.expGained)
+        db.withTransaction {
+            val session = db.sessionDao().byId(sessionId) ?: return@withTransaction
+            db.ledgerDao().deleteTaskEarning(sessionId)
+            session.domainId?.takeIf { session.expGained > 0 }?.let { domainId ->
+                val domain = db.domainDao().byId(domainId) ?: return@let
+                val expToRemove = minOf(session.expGained, domain.totalExp)
+                val oldLevel = Economy.levelForExp(domain.totalExp)
+                val newLevel = Economy.levelForExp(domain.totalExp - expToRemove)
+                db.domainDao().addExp(domainId, -expToRemove)
+                if (newLevel < oldLevel) {
+                    val bonusToRemove = ((newLevel + 1)..oldLevel)
+                        .sumOf { Economy.levelUpReward(it) }
+                    db.ledgerDao().insert(
+                        LedgerEntity(
+                            amount = -bonusToRemove,
+                            type = LedgerType.ADJUST,
+                            refId = session.id,
+                            note = "删除专注，撤回「${domain.name}」降级奖励",
+                        )
+                    )
+                }
+            }
+            db.sessionDao().deleteById(sessionId)
         }
-        db.sessionDao().deleteById(sessionId)
     }
 
     /**
@@ -195,7 +218,7 @@ class TimerRepository(private val db: CiDatabase) {
         val newLevel = Economy.levelForExp(domain.totalExp + exp)
         db.domainDao().addExp(domainId, exp)
         if (newLevel <= oldLevel) return null
-        val bonus = Economy.levelUpReward(newLevel)
+        val bonus = ((oldLevel + 1)..newLevel).sumOf { Economy.levelUpReward(it) }
         db.ledgerDao().insert(
             LedgerEntity(
                 amount = bonus,

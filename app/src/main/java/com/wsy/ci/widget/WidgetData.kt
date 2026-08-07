@@ -3,15 +3,13 @@ package com.wsy.ci.widget
 import android.content.Context
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.core.util.currentEpochDayFlow
 import com.wsy.ci.core.widget.TodayWidgetModel
 import com.wsy.ci.core.widget.TodayWidgetUi
-import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 
 /**
  * 小组件要显示的内容，随 Room 的三条 Flow 自动更新。
@@ -23,7 +21,7 @@ import kotlinx.coroutines.flow.flow
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun todayUiFlow(context: Context): Flow<TodayWidgetUi> {
     val container = (context.applicationContext as CiApp).container
-    return currentDayFlow().flatMapLatest { today ->
+    return currentEpochDayFlow().flatMapLatest { today ->
         combine(
             container.db.taskDao().observeByDay(today),
             container.db.sessionDao().observeOpenSession(),
@@ -40,20 +38,5 @@ internal fun todayUiFlow(context: Context): Flow<TodayWidgetUi> {
                 focusedMinutesToday = TimeFormat.millisToMinutes(focusedMillis),
             )
         }
-    }
-}
-
-/**
- * 当前日期，跨零点自动再发一次。
- *
- * composition 一驻就是几小时，「今天」不能只在开头算一次，
- * 否则午夜之后小组件会一直停留在昨天的安排上。
- */
-private fun currentDayFlow(): Flow<Long> = flow {
-    while (true) {
-        val today = LocalDate.now()
-        emit(today.toEpochDay())
-        val untilMidnight = TimeFormat.dayStartMillis(today.toEpochDay() + 1) - System.currentTimeMillis()
-        delay(untilMidnight.coerceAtLeast(1_000L))
     }
 }

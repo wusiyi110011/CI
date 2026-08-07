@@ -76,7 +76,7 @@ class CiImportTest {
     }
 
     @Test
-    fun `结束早于开始报错`() {
+    fun `结束早于开始按跨午夜解析`() {
         val result = CiImport.parse(
             """
             {"version":1,"tasks":[
@@ -84,8 +84,17 @@ class CiImportTest {
             ]}
             """.trimIndent()
         )
+        assertTrue(result is ImportParseResult.Ok)
+        assertEquals(19 * 60 + 24 * 60, CiImport.normalizeEndMinute(20 * 60, 19 * 60))
+    }
+
+    @Test
+    fun `开始与结束相同报错`() {
+        val result = CiImport.parse(
+            """{"version":1,"tasks":[{"title":"t","date":"2026-07-29","start":"20:00","end":"20:00"}]}"""
+        )
         assertTrue(result is ImportParseResult.Err)
-        assertTrue((result as ImportParseResult.Err).errors.any { it.contains("晚于开始") })
+        assertTrue((result as ImportParseResult.Err).errors.any { it.contains("不能相同") })
     }
 
     @Test
