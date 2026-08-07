@@ -43,6 +43,15 @@ sealed interface RouteGenState {
     data class Error(val message: String) : RouteGenState
 }
 
+/** 同时进行中的主线上限。 */
+internal const val MAX_ACTIVE_MAIN_QUESTS = 4
+
+/** 主线批量关联弹窗所需的数据快照。 */
+data class BatchAssignState(
+    val quest: QuestEntity,
+    val tasks: List<TaskEntity>,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -56,7 +65,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     val domains: StateFlow<List<DomainEntity>> = db.domainDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** 主线上限 2 条：超限时保存被拒并给出提示。 */
+    /** 主线超限时保存被拒并给出提示。 */
     val message = MutableStateFlow<String?>(null)
 
     // ---------- 任务线详情（章节 + 具体任务 + 立即开始） ----------
@@ -80,6 +89,32 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeQuest() {
         selectedQuestId.value = null
+    }
+
+    // ---------- 主线批量关联任务 ----------
+
+    val batchAssign = MutableStateFlow<BatchAssignState?>(null)
+
+    fun openBatchAssign(quest: QuestEntity) {
+        if (quest.type != QuestType.MAIN || quest.status != QuestStatus.ACTIVE) return
+        viewModelScope.launch {
+            batchAssign.value = BatchAssignState(quest, db.taskDao().unassigned())
+        }
+    }
+
+    fun closeBatchAssign() {
+        batchAssign.value = null
+    }
+
+    fun assignTasksToMain(taskIds: Set<Long>) {
+        val state = batchAssign.value ?: return
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch {
+            val attached = db.taskDao().attachUnassignedToQuest(taskIds.toList(), state.quest.id)
+            batchAssign.value = null
+            message.value = "已将 $attached 个任务关联到「${state.quest.title}」"
+            CiWidgetUpdater.updateAll(getApplication())
+        }
     }
 
     /**
@@ -149,8 +184,8 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
             if (quest.type == QuestType.MAIN && quest.status == QuestStatus.ACTIVE) {
                 val activeMains = db.questDao().activeByType(QuestType.MAIN)
                     .filter { it.id != quest.id }
-                if (activeMains.size >= 2) {
-                    message.value = "主线最多同时进行 2 条，先完成或归档一条吧"
+                if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
+                    message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
                     return@launch
                 }
             }
@@ -183,14 +218,14 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 从「已完成」里捞回来接着做。主线满 2 条时拒绝，规则与新建一致。 */
+    /** 从「已完成」里捞回来接着做。主线已满时拒绝，规则与新建一致。 */
     fun restoreQuest(quest: QuestEntity) {
         viewModelScope.launch {
             if (quest.type == QuestType.MAIN) {
                 val activeMains = db.questDao().activeByType(QuestType.MAIN)
                     .filter { it.id != quest.id }
-                if (activeMains.size >= 2) {
-                    message.value = "主线最多同时进行 2 条，先完成或归档一条吧"
+                if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
+                    message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
                     return@launch
                 }
             }
@@ -228,8 +263,8 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmRoute(plan: RoutePlan) {
         viewModelScope.launch {
             val activeMains = db.questDao().activeByType(QuestType.MAIN)
-            if (activeMains.size >= 2) {
-                message.value = "主线已满 2 条，先完成或归档一条再生成"
+            if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
+                message.value = "主线已满 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条再生成"
                 routeGen.value = RouteGenState.Idle
                 return@launch
             }
@@ -315,13 +350,13 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         importPending.value = null
     }
 
-    /** 主线上限 2 条，超了就没必要让用户过目清单了，直接拦在预览之前。 */
+    /** 主线超出上限就没必要让用户过目清单了，直接拦在预览之前。 */
     private suspend fun checkMainLimit(file: CiImportFile): String? {
         val importingMains = file.quests.count { it.type == "MAIN" }
         if (importingMains == 0) return null
         val activeMains = db.questDao().activeByType(QuestType.MAIN).size
-        if (activeMains + importingMains <= 2) return null
-        return "❌ 主线最多同时 2 条：当前已有 $activeMains 条，导入含 $importingMains 条"
+        if (activeMains + importingMains <= MAX_ACTIVE_MAIN_QUESTS) return null
+        return "❌ 主线最多同时 $MAX_ACTIVE_MAIN_QUESTS 条：当前已有 $activeMains 条，导入含 $importingMains 条"
     }
 
     private suspend fun applyImport(file: CiImportFile): String {

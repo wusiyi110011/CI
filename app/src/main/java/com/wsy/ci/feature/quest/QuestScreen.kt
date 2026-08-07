@@ -60,8 +60,8 @@ private enum class QuestTab(val label: String) {
     DOMAIN("领域头衔"),
 }
 
-/** 主线卡：一行两张（宽度按行等分，实机内容区比设计画布更宽）。 */
-private const val MAIN_CARDS_PER_ROW = 2
+/** 主线卡：每条独占一行。 */
+private const val MAIN_CARDS_PER_ROW = 1
 private val MAIN_CARD_HEIGHT = 180.dp
 
 /** 支线卡：一行四张。 */
@@ -85,6 +85,7 @@ fun QuestScreen(
     val selectedQuestId by viewModel.selectedQuestId.collectAsState()
     val questTasks by viewModel.questTasks.collectAsState()
     val running by viewModel.runningSession.collectAsState()
+    val batchAssign by viewModel.batchAssign.collectAsState()
 
     // 进行中与完成/归档分屏展示：完成的仍要能点开回看，所以两份都来自同一个全量流
     val activeQuests = quests.filter { it.status == QuestStatus.ACTIVE }
@@ -164,6 +165,7 @@ fun QuestScreen(
                     onComplete = viewModel::completeQuest,
                     onArchive = viewModel::archiveQuest,
                     onRestore = viewModel::restoreQuest,
+                    onBatchAssign = viewModel::openBatchAssign,
                     modifier = Modifier.weight(1f),
                 )
                 QuestTab.FINISHED -> QuestBoard(
@@ -175,6 +177,7 @@ fun QuestScreen(
                     onComplete = viewModel::completeQuest,
                     onArchive = viewModel::archiveQuest,
                     onRestore = viewModel::restoreQuest,
+                    onBatchAssign = viewModel::openBatchAssign,
                     modifier = Modifier.weight(1f),
                 )
                 QuestTab.DOMAIN -> DomainTitleBoard(
@@ -229,6 +232,14 @@ fun QuestScreen(
             taskCount = questTasks.size,
             onConfirm = { viewModel.deleteQuest(quest); deleting = null },
             onDismiss = { deleting = null },
+        )
+    }
+
+    batchAssign?.let { state ->
+        BatchAssignTasksDialog(
+            state = state,
+            onConfirm = viewModel::assignTasksToMain,
+            onDismiss = viewModel::closeBatchAssign,
         )
     }
 
@@ -338,6 +349,7 @@ private fun QuestBoard(
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
     onRestore: (QuestEntity) -> Unit,
+    onBatchAssign: (QuestEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mains = quests.filter { it.type == QuestType.MAIN }
@@ -358,7 +370,11 @@ private fun QuestBoard(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val activeCount = mains.count { it.status == QuestStatus.ACTIVE }
                 SectionLabel(
-                    if (activeCount > 0) "主线（$activeCount/2）" else "主线（${mains.size}）"
+                    if (activeCount > 0) {
+                        "主线（$activeCount/$MAX_ACTIVE_MAIN_QUESTS）"
+                    } else {
+                        "主线（${mains.size}）"
+                    }
                 )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
@@ -373,6 +389,7 @@ private fun QuestBoard(
                             onComplete = onComplete,
                             onArchive = onArchive,
                             onRestore = onRestore,
+                            onBatchAssign = onBatchAssign,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -450,6 +467,7 @@ private fun MainQuestCard(
     onComplete: (QuestEntity) -> Unit,
     onArchive: (QuestEntity) -> Unit,
     onRestore: (QuestEntity) -> Unit,
+    onBatchAssign: (QuestEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val today = LocalDate.now().toEpochDay()
@@ -481,6 +499,11 @@ private fun MainQuestCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = CiSpacing.xxs),
                         )
+                    }
+                }
+                if (quest.status == QuestStatus.ACTIVE) {
+                    TextButton(onClick = { onBatchAssign(quest) }) {
+                        Text("批量关联任务")
                     }
                 }
                 QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
