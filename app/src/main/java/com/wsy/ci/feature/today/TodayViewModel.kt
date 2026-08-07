@@ -15,6 +15,7 @@ import com.wsy.ci.core.scheduler.RescheduleResult
 import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.core.util.currentEpochDayFlow
 import com.wsy.ci.llm.LlmParsed
 import com.wsy.ci.llm.ParsedBlocker
 import com.wsy.ci.widget.CiWidgetUpdater
@@ -24,6 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -35,26 +37,36 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as CiApp).container
     private val db = container.db
-    private val today: Long = LocalDate.now().toEpochDay()
+
+    val todayEpochDay: StateFlow<Long> = currentEpochDayFlow()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            LocalDate.now().toEpochDay(),
+        )
 
     /**
      * 今日时间线的素材。查询多带上昨天：跨零点的任务和专注属于昨天，
      * 但今天要画出它们延续过来的那一段（切片交给 `DaySegments`）。
      */
-    val tasks: StateFlow<List<TaskEntity>> = db.taskDao().observeByRange(today - 1, today)
+    val tasks: StateFlow<List<TaskEntity>> = todayEpochDay
+        .flatMapLatest { today -> db.taskDao().observeByRange(today - 1, today) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val sessions: StateFlow<List<SessionEntity>> = db.sessionDao()
-        .observeByTimeRange(TimeFormat.dayStartMillis(today - 1), TimeFormat.dayEndMillis(today))
+    val sessions: StateFlow<List<SessionEntity>> = todayEpochDay
+        .flatMapLatest { today ->
+            db.sessionDao().observeByTimeRange(
+                TimeFormat.dayStartMillis(today - 1),
+                TimeFormat.dayEndMillis(today),
+            )
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 今日时间线上的计划片段（含昨天跨过来的尾巴）。 */
-    val segments: StateFlow<List<TaskSegment>> = tasks
-        .map { DaySegments.tasksOn(it, today) }
+    val segments: StateFlow<List<TaskSegment>> = combine(tasks, todayEpochDay) { list, today ->
+        DaySegments.tasksOn(list, today)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /** 今天这一天，供 UI 切片实际轨。 */
-    val todayEpochDay: Long get() = today
 
     val runningSession: StateFlow<SessionEntity?> = db.sessionDao().observeOpenSession()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -157,6 +169,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     fun skipTask(task: TaskEntity) {
         viewModelScope.launch {
             db.taskDao().update(task.copy(status = com.wsy.ci.core.db.TaskStatus.SKIPPED))
+            CiWidgetUpdater.updateAll(getApplication())
         }
     }
 

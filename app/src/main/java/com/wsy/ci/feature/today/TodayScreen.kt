@@ -68,6 +68,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     val balance by viewModel.balance.collectAsState()
     val settlement by viewModel.lastSettlement.collectAsState()
     val nlState by viewModel.nlState.collectAsState()
+    val todayEpochDay by viewModel.todayEpochDay.collectAsState()
 
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
     var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
@@ -91,7 +92,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
         ) {
             CiScreenHeader(
                 title = "今日",
-                subtitle = TimeFormat.date(LocalDate.now().toEpochDay()),
+                subtitle = TimeFormat.date(todayEpochDay),
                 trailing = { CiBalanceChip(balance) },
             )
 
@@ -118,7 +119,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                     sessions = sessions,
                     tasks = tasks + listOfNotNull(runningTask),
                     nowMillis = nowTick,
-                    epochDay = viewModel.todayEpochDay,
+                    epochDay = todayEpochDay,
                     quests = quests,
                 ),
                 onTaskClick = { detailTask = it },
@@ -144,7 +145,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                 val rounded = (now.hour * 60 + now.minute + 14) / 15 * 15
                 editing = TaskEntity(
                     title = "",
-                    epochDay = LocalDate.now().toEpochDay() + rounded / MINUTES_PER_DAY,
+                    epochDay = todayEpochDay + rounded / MINUTES_PER_DAY,
                     startMinute = rounded % MINUTES_PER_DAY,
                     endMinute = rounded % MINUTES_PER_DAY + 60,
                 )

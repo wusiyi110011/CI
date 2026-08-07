@@ -1,5 +1,6 @@
 package com.wsy.ci.core.data
 
+import androidx.room.withTransaction
 import com.wsy.ci.core.db.CiDatabase
 import com.wsy.ci.core.db.DailyPickEntity
 import com.wsy.ci.core.db.LedgerEntity
@@ -15,6 +16,7 @@ sealed interface PurchaseResult {
     data class Success(val item: ShopItemEntity, val paid: Long) : PurchaseResult
     data class NotEnough(val balance: Long, val price: Long) : PurchaseResult
     data object NotFound : PurchaseResult
+    data object Unavailable : PurchaseResult
 }
 
 /** 商城：货架、每日精选刷新（幂等）、购买扣款。 */
@@ -37,7 +39,7 @@ class ShopRepository(private val db: CiDatabase) {
         db.shopDao().insertPurchases(DefaultPurchases.seeds(System.currentTimeMillis()))
     }
 
-    fun observeTodayPicks() = db.shopDao().observePicks(LocalDate.now().toEpochDay())
+    fun observePicks(epochDay: Long) = db.shopDao().observePicks(epochDay)
     fun observeBalance() = db.ledgerDao().observeBalance()
     fun observeLedger(limit: Int = 200) = db.ledgerDao().observeRecent(limit)
 
@@ -54,21 +56,27 @@ class ShopRepository(private val db: CiDatabase) {
 
     /** 确保今日精选已生成；App 打开与每日 WorkManager 都会调用，幂等。 */
     suspend fun ensureTodayPicks() {
-        val today = LocalDate.now().toEpochDay()
-        if (db.shopDao().pickCount(today) > 0) return
-        val pools = db.shopDao().activeItems()
-            .groupBy({ it.rarity }, { it.id })
-        val picks = DailyShop.rollDailyPicks(pools, DailyShop.seedForDay(today))
-        if (picks.isEmpty()) return
-        db.shopDao().insertPicks(
-            picks.map {
-                DailyPickEntity(
-                    epochDay = today,
-                    itemId = it.itemId,
-                    discountPercent = it.discountPercent,
-                )
-            }
-        )
+        ensurePicks(LocalDate.now().toEpochDay())
+    }
+
+    /** 为指定日期生成精选；事务内再次检查，避免多个入口并发插入重复精选。 */
+    suspend fun ensurePicks(epochDay: Long) {
+        db.withTransaction {
+            if (db.shopDao().pickCount(epochDay) > 0) return@withTransaction
+            val pools = db.shopDao().activeItems()
+                .groupBy({ it.rarity }, { it.id })
+            val picks = DailyShop.rollDailyPicks(pools, DailyShop.seedForDay(epochDay))
+            if (picks.isEmpty()) return@withTransaction
+            db.shopDao().insertPicks(
+                picks.map {
+                    DailyPickEntity(
+                        epochDay = epochDay,
+                        itemId = it.itemId,
+                        discountPercent = it.discountPercent,
+                    )
+                }
+            )
+        }
     }
 
     /** 含已下架的全部商品名，批量导入时按名去重用。 */
@@ -83,33 +91,39 @@ class ShopRepository(private val db: CiDatabase) {
 
     /** 购买：pickId 非空按精选折扣价结算，否则原价。余额不足直接拒绝。 */
     suspend fun purchase(itemId: Long, pickId: Long? = null): PurchaseResult {
-        val item = db.shopDao().itemById(itemId) ?: return PurchaseResult.NotFound
-        val pick = pickId?.let { db.shopDao().pickById(it) }
-        val price = if (pick != null && !pick.purchased) {
-            DailyShop.discountedPrice(item.priceCi, pick.discountPercent)
-        } else {
-            item.priceCi
-        }
-        val balance = db.ledgerDao().balance()
-        if (balance < price) return PurchaseResult.NotEnough(balance, price)
+        return db.withTransaction {
+            val item = db.shopDao().itemById(itemId)
+                ?.takeIf { it.active }
+                ?: return@withTransaction PurchaseResult.NotFound
+            val pick = pickId?.let { id ->
+                db.shopDao().pickById(id)?.takeIf {
+                    it.epochDay == LocalDate.now().toEpochDay() && it.itemId == itemId && !it.purchased
+                } ?: return@withTransaction PurchaseResult.Unavailable
+            }
+            val price = pick?.let {
+                DailyShop.discountedPrice(item.priceCi, it.discountPercent)
+            } ?: item.priceCi
+            val balance = db.ledgerDao().balance()
+            if (balance < price) return@withTransaction PurchaseResult.NotEnough(balance, price)
 
-        db.ledgerDao().insert(
-            LedgerEntity(
-                amount = -price,
-                type = LedgerType.SPEND_SHOP,
-                refId = item.id,
-                note = item.name,
+            db.ledgerDao().insert(
+                LedgerEntity(
+                    amount = -price,
+                    type = LedgerType.SPEND_SHOP,
+                    refId = item.id,
+                    note = item.name,
+                )
             )
-        )
-        db.shopDao().insertPurchase(
-            PurchaseEntity(
-                itemId = item.id,
-                itemName = item.name,
-                pricePaid = price,
-                rarity = item.rarity,
+            db.shopDao().insertPurchase(
+                PurchaseEntity(
+                    itemId = item.id,
+                    itemName = item.name,
+                    pricePaid = price,
+                    rarity = item.rarity,
+                )
             )
-        )
-        pick?.let { db.shopDao().updatePick(it.copy(purchased = true)) }
-        return PurchaseResult.Success(item, price)
+            pick?.let { db.shopDao().updatePick(it.copy(purchased = true)) }
+            PurchaseResult.Success(item, price)
+        }
     }
 }

@@ -408,11 +408,13 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
             val questId = t.quest?.trim()?.let { ref ->
                 questIdByTitle[ref].also { if (it == null) unresolvedQuestRefs++ }
             }
+            val startMinute = CiImport.parseHm(t.start)!!
+            val endMinute = CiImport.parseHm(t.end)!!
             TaskEntity(
                 title = t.title.trim(),
                 epochDay = CiImport.parseDate(t.date)!!,
-                startMinute = CiImport.parseHm(t.start)!!,
-                endMinute = CiImport.parseHm(t.end)!!,
+                startMinute = startMinute,
+                endMinute = CiImport.normalizeEndMinute(startMinute, endMinute),
                 difficulty = CiImport.parseDifficulty(t.difficulty) ?: Difficulty.NORMAL,
                 domainId = domainId,
                 questId = questId,
@@ -420,7 +422,10 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                 note = t.note,
             )
         }
-        if (tasks.isNotEmpty()) db.taskDao().insertAll(tasks)
+        if (tasks.isNotEmpty()) {
+            db.taskDao().insertAll(tasks)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
 
         return buildString {
             append("✅ 导入成功：")

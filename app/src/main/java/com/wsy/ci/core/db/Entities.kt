@@ -3,6 +3,7 @@ package com.wsy.ci.core.db
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.wsy.ci.core.designsystem.DEFAULT_DOMAIN_COLOR_ARGB
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.economy.Rarity
@@ -12,7 +13,7 @@ import com.wsy.ci.core.economy.Rarity
 data class DomainEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val colorArgb: Long = 0xFF3F6B35,
+    val colorArgb: Long = DEFAULT_DOMAIN_COLOR_ARGB,
     val totalExp: Long = 0,
     val titlesJson: String? = null,
     val createdAt: Long = System.currentTimeMillis(),

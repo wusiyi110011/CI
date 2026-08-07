@@ -8,6 +8,9 @@ import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 object TimeFormat {
     private val dateFmt = DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)
@@ -68,4 +71,15 @@ object TimeFormat {
         LocalDate.ofEpochDay(epochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     fun dayEndMillis(epochDay: Long): Long = dayStartMillis(epochDay + 1) - 1
+}
+
+/** 当前本地日期；保持收集时会在每次跨过午夜后自动发出新值。 */
+fun currentEpochDayFlow(): Flow<Long> = flow {
+    while (true) {
+        val today = LocalDate.now()
+        emit(today.toEpochDay())
+        val untilMidnight = TimeFormat.dayStartMillis(today.toEpochDay() + 1) -
+            System.currentTimeMillis()
+        delay(untilMidnight.coerceAtLeast(1_000L))
+    }
 }

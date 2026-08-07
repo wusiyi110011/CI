@@ -67,8 +67,14 @@ fun previewPlan(
         val knownTitles = existingQuestTitles + file.quests.map { it.title.trim() }
         val lines = file.tasks.previewLines { t ->
             val day = CiImport.parseDate(t.date)?.let { TimeFormat.shortDate(it) } ?: t.date
-            val start = CiImport.parseHm(t.start)?.let { TimeFormat.minuteOfDay(it) } ?: t.start
-            val end = CiImport.parseHm(t.end)?.let { TimeFormat.minuteOfDay(it) } ?: t.end
+            val startMinute = CiImport.parseHm(t.start)
+            val endMinute = CiImport.parseHm(t.end)
+            val start = startMinute?.let { TimeFormat.minuteOfDay(it) } ?: t.start
+            val end = if (startMinute != null && endMinute != null) {
+                TimeFormat.minuteOfDay(CiImport.normalizeEndMinute(startMinute, endMinute))
+            } else {
+                t.end
+            }
             val difficulty = CiImport.parseDifficulty(t.difficulty)?.label ?: t.difficulty
             buildString {
                 append("$day $start–$end · ${t.title.trim()}（$difficulty）")

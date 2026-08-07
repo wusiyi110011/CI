@@ -324,14 +324,16 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
     }
 }
 
-/** 新任务默认落在当前选中日的下一个 15 分钟刻度，时长一小时。 */
-private fun newTaskDraft(selectedDay: Long): TaskEntity {
-    val now = LocalTime.now()
-    val rounded = (now.hour * 60 + now.minute + 14) / 15 * 15
-    val startMinute = rounded % MINUTES_PER_DAY
+/** 新任务默认落在当前选中日的下一个 15 分钟刻度；临近午夜时使用当天最后一小时。 */
+internal fun newTaskDraft(
+    selectedDay: Long,
+    currentMinute: Int = LocalTime.now().let { it.hour * 60 + it.minute },
+): TaskEntity {
+    val rounded = (currentMinute + 14) / 15 * 15
+    val startMinute = rounded.coerceAtMost(MINUTES_PER_DAY - 60)
     return TaskEntity(
         title = "",
-        epochDay = selectedDay + rounded / MINUTES_PER_DAY,
+        epochDay = selectedDay,
         startMinute = startMinute,
         endMinute = startMinute + 60,
     )

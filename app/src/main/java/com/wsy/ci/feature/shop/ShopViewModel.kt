@@ -18,12 +18,17 @@ import com.wsy.ci.core.porting.previewShop
 import com.wsy.ci.core.shop.FulfillFilter
 import com.wsy.ci.core.shop.PurchaseFilter
 import com.wsy.ci.core.shop.TimeFilter
+import com.wsy.ci.core.util.currentEpochDayFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ShopViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = (app as CiApp).container.shopRepository
@@ -31,7 +36,9 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
     val items: StateFlow<List<ShopItemEntity>> = repo.observeItems()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val picks: StateFlow<List<DailyPickEntity>> = repo.observeTodayPicks()
+    val picks: StateFlow<List<DailyPickEntity>> = currentEpochDayFlow()
+        .onEach { repo.ensurePicks(it) }
+        .flatMapLatest { repo.observePicks(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val balance: StateFlow<Long> = repo.observeBalance()
@@ -47,12 +54,6 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 「我的」的筛选条件，默认全不限。 */
     val purchaseFilter = MutableStateFlow(PurchaseFilter())
-
-    init {
-        // 不再自动铺示例兑换记录：它会和「清空数据」打架，一清就又长回来。
-        // 需要示例时把 repo.ensureSeedPurchases() 加回这里即可。
-        viewModelScope.launch { repo.ensureTodayPicks() }
-    }
 
     fun toggleRarityFilter(rarity: Rarity) {
         val current = purchaseFilter.value
@@ -107,6 +108,8 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
                     message.value = "余额不足：需要 ${result.price} CI，当前 ${result.balance} CI"
                 PurchaseResult.NotFound ->
                     message.value = "商品不存在"
+                PurchaseResult.Unavailable ->
+                    message.value = "今日精选已失效或已兑换"
             }
         }
     }

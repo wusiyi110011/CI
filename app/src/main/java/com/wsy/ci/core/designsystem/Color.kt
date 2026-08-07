@@ -11,6 +11,12 @@ import androidx.compose.ui.graphics.Color
  * [androidx.compose.material3.MaterialTheme.colorScheme] 或 [LocalCiColors]。
  */
 
+/** 持久化领域没有指定颜色时使用的默认 ARGB。 */
+const val DEFAULT_DOMAIN_COLOR_ARGB: Long = 0xFF3F6B35
+
+/** 统计中“未分类”领域使用的 ARGB。 */
+const val UNCLASSIFIED_DOMAIN_COLOR_ARGB: Long = 0xFF9E9E9E
+
 // ---- 亮色：纸白账本 ----
 private val Graphite = Color(0xFF39362F)
 private val GraphiteOn = Color(0xFFFFFFFF)
