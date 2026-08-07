@@ -154,7 +154,7 @@ object CiImport {
   "quests": [
     {
       "type": "MAIN",
-      "title": "主线标题（主线最多同时2条）",
+      "title": "主线标题（主线最多同时4条）",
       "description": "一句话描述",
       "deadline": "2026-12-31",
       "chapters": [

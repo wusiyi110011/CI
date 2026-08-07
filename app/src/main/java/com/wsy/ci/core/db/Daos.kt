@@ -72,6 +72,17 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE questId = :questId ORDER BY epochDay, startMinute")
     fun observeByQuest(questId: Long): Flow<List<TaskEntity>>
 
+    /** 尚未归属任何任务线的任务，供主线卡批量关联。 */
+    @Query("SELECT * FROM tasks WHERE questId IS NULL ORDER BY epochDay, startMinute")
+    suspend fun unassigned(): List<TaskEntity>
+
+    /**
+     * 把选中的未关联任务挂到任务线；再次限制 questId 为空，避免覆盖弹窗打开后新增的关联。
+     * 返回实际关联数量。
+     */
+    @Query("UPDATE tasks SET questId = :questId WHERE id IN (:taskIds) AND questId IS NULL")
+    suspend fun attachUnassignedToQuest(taskIds: List<Long>, questId: Long): Int
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun byId(id: Long): TaskEntity?
 

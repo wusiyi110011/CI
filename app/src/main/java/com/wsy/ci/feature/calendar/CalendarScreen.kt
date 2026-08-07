@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +46,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.CiApp
+import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
@@ -55,6 +58,7 @@ import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.timeline.DaySegments
+import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.feature.today.DayTimeline
@@ -65,6 +69,7 @@ import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -130,6 +135,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTask(task: TaskEntity) {
         viewModelScope.launch {
             if (task.id == 0L) db.taskDao().insert(task) else db.taskDao().update(task)
+            CiWidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    fun addDomain(name: String, onCreated: (Long) -> Unit) {
+        viewModelScope.launch {
+            val id = db.domainDao().insert(DomainEntity(name = name))
+            onCreated(id)
         }
     }
 
@@ -237,35 +250,50 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             },
         )
 
-        when (mode) {
-            CalendarMode.DAY -> DayTimeline(
-                segments = DaySegments.tasksOn(dayTasks, selectedDay),
-                actuals = sessionsToBlocks(
-                    sessions = daySessions,
-                    tasks = dayTasks,
-                    nowMillis = System.currentTimeMillis(),
-                    epochDay = selectedDay,
-                ),
-                onTaskClick = { detailTask = it },
-                nowMinute = nowMinuteIfToday(selectedDay),
-                showActualTrack = false,
-                modifier = Modifier.weight(1f),
-            )
-            CalendarMode.WEEK -> WeekGrid(
-                weekStartDay = LocalDate.ofEpochDay(selectedDay).with(DayOfWeek.MONDAY).toEpochDay(),
-                tasks = weekTasks,
-                onTaskClick = { detailTask = it },
-                modifier = Modifier.weight(1f),
-            )
-            CalendarMode.MONTH -> MonthHeatmap(
-                selectedDay = selectedDay,
-                sessions = monthSessions,
-                onDayClick = { day ->
-                    viewModel.selectedDay.value = day
-                    mode = CalendarMode.DAY
-                },
-                modifier = Modifier.weight(1f),
-            )
+        Box(modifier = Modifier.weight(1f)) {
+            when (mode) {
+                CalendarMode.DAY -> DayTimeline(
+                    segments = DaySegments.tasksOn(dayTasks, selectedDay),
+                    actuals = sessionsToBlocks(
+                        sessions = daySessions,
+                        tasks = dayTasks,
+                        nowMillis = System.currentTimeMillis(),
+                        epochDay = selectedDay,
+                    ),
+                    onTaskClick = { detailTask = it },
+                    nowMinute = nowMinuteIfToday(selectedDay),
+                    showActualTrack = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                CalendarMode.WEEK -> WeekGrid(
+                    weekStartDay = LocalDate.ofEpochDay(selectedDay).with(DayOfWeek.MONDAY).toEpochDay(),
+                    tasks = weekTasks,
+                    onTaskClick = { detailTask = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                CalendarMode.MONTH -> MonthHeatmap(
+                    selectedDay = selectedDay,
+                    sessions = monthSessions,
+                    onDayClick = { day ->
+                        viewModel.selectedDay.value = day
+                        mode = CalendarMode.DAY
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            FloatingActionButton(
+                onClick = { editing = newTaskDraft(selectedDay) },
+                shape = CiShapes.fab,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(CiSpacing.lg)
+                    .size(CiSizes.fab),
+            ) {
+                Text("＋", style = MaterialTheme.typography.headlineSmall)
+            }
         }
     }
 
@@ -291,9 +319,22 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             onSave = viewModel::saveTask,
             onDelete = if (task.id != 0L) viewModel::deleteTask else null,
             onDismiss = { editing = null },
-            onCreateDomain = { _, _ -> },
+            onCreateDomain = viewModel::addDomain,
         )
     }
+}
+
+/** 新任务默认落在当前选中日的下一个 15 分钟刻度，时长一小时。 */
+private fun newTaskDraft(selectedDay: Long): TaskEntity {
+    val now = LocalTime.now()
+    val rounded = (now.hour * 60 + now.minute + 14) / 15 * 15
+    val startMinute = rounded % MINUTES_PER_DAY
+    return TaskEntity(
+        title = "",
+        epochDay = selectedDay + rounded / MINUTES_PER_DAY,
+        startMinute = startMinute,
+        endMinute = startMinute + 60,
+    )
 }
 
 /** 只有查看今天时才画当前时刻线。 */
