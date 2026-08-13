@@ -6,6 +6,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 「复利（Compound Interest）」——游戏化 AI 学习日程 Android 应用，单人自用，目标设备是三星 Galaxy Tab S11 Ultra 平板（横屏、左侧导航栏布局）。三件事合一：AI 自动排程 + 游戏化经济 + 数据复盘。完整产品方案见 [docs/产品与技术方案.md](docs/产品与技术方案.md)，含开发路线图 M1~M5。
 
+产品 Slogan：把学习变成由 AI 驱动、可持续积累、即时获得反馈与回报的个人复利游戏，让每一次专注都转化为长期成长。
+
 ## 常用命令
 
 本机 `./gradlew` 直接跑会报 "Unable to locate a Java Runtime"，必须带 `JAVA_HOME`；`adb` 也不在 PATH 上。
