@@ -109,5 +109,14 @@ abstract class CiDatabase : RoomDatabase() {
                 ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { instance = it }
             }
+
+        /**
+         * 数据备份恢复需要替换整个数据库文件。先关闭并清空单例，避免 Room 持有旧文件句柄。
+         * 调用方完成替换后再通过 [get] 懒加载新数据库。
+         */
+        fun closeForRestore() = synchronized(this) {
+            instance?.close()
+            instance = null
+        }
     }
 }

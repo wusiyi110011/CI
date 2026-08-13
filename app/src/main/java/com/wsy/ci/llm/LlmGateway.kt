@@ -17,6 +17,26 @@ enum class LlmTaskType(val label: String, val tier: LlmTier) {
     IMAGE_UNDERSTAND("图片理解", LlmTier.VISION),
 }
 
+/** 本地推理的提示词参数。保持在任务类型旁边，避免调用方各自猜测模型预算。 */
+data class LocalGenerationOptions(
+    val thinking: Boolean,
+    val maxTokens: Int,
+) {
+    init {
+        require(maxTokens > 0) { "maxTokens 必须大于 0" }
+    }
+}
+
+val LlmTaskType.localGenerationOptions: LocalGenerationOptions
+    get() = when (this) {
+        LlmTaskType.ROUTE_GEN -> LocalGenerationOptions(thinking = true, maxTokens = 2048)
+        LlmTaskType.REVIEW_ANALYSIS -> LocalGenerationOptions(thinking = true, maxTokens = 1536)
+        LlmTaskType.NL_PARSE -> LocalGenerationOptions(thinking = false, maxTokens = 256)
+        LlmTaskType.ITEM_PRICING -> LocalGenerationOptions(thinking = false, maxTokens = 384)
+        LlmTaskType.TITLE_GEN -> LocalGenerationOptions(thinking = false, maxTokens = 256)
+        LlmTaskType.IMAGE_UNDERSTAND -> LocalGenerationOptions(thinking = false, maxTokens = 512)
+    }
+
 /** 鉴权头风格：DeepSeek 用 Bearer，MiMo 用 api-key 头。 */
 enum class AuthStyle { BEARER, API_KEY_HEADER }
 
@@ -32,6 +52,15 @@ data class LlmEndpoint(
     val authStyle: AuthStyle,
     val keyId: String,
 )
+
+/** 任务路由选择。旧版端点 id 归一化为 [Api]，null 归一化为 [Default]。 */
+sealed interface LlmRoute {
+    data object Default : LlmRoute
+    data object Local : LlmRoute
+    data object Off : LlmRoute
+    data class Api(val endpoint: LlmEndpoint? = null) : LlmRoute
+    data class Invalid(val raw: String) : LlmRoute
+}
 
 object LlmEndpoints {
     const val KEY_DEEPSEEK = "deepseek"
@@ -75,7 +104,63 @@ object LlmEndpoints {
 
 sealed interface LlmResult {
     data class Success(val content: String) : LlmResult
-    data class Failure(val message: String) : LlmResult
+    /**
+     * 结构化失败原因。message 字段保留在 Failure 上，兼容已有业务层调用。
+     */
+    data class Failure(
+        val message: String,
+        val error: LlmError = LlmError(LlmErrorCode.UNKNOWN, message),
+    ) : LlmResult
+}
+
+enum class LlmErrorCode {
+    ROUTE_OFF,
+    ROUTE_INVALID,
+    API_UNAVAILABLE,
+    LOCAL_UNAVAILABLE,
+    LOCAL_NOT_READY,
+    LOCAL_LOAD_FAILED,
+    LOCAL_INFERENCE_FAILED,
+    LOCAL_CANCELLED,
+    UNSUPPORTED,
+    UNKNOWN,
+}
+
+enum class LlmErrorSource { ROUTER, API, LOCAL }
+
+data class LlmError(
+    val code: LlmErrorCode,
+    val message: String,
+    val source: LlmErrorSource = when (code) {
+        LlmErrorCode.API_UNAVAILABLE -> LlmErrorSource.API
+        LlmErrorCode.LOCAL_UNAVAILABLE,
+        LlmErrorCode.LOCAL_NOT_READY,
+        LlmErrorCode.LOCAL_LOAD_FAILED,
+        LlmErrorCode.LOCAL_INFERENCE_FAILED,
+        LlmErrorCode.LOCAL_CANCELLED -> LlmErrorSource.LOCAL
+        else -> LlmErrorSource.ROUTER
+    },
+    val retryable: Boolean = code in setOf(
+        LlmErrorCode.API_UNAVAILABLE,
+        LlmErrorCode.LOCAL_UNAVAILABLE,
+        LlmErrorCode.LOCAL_NOT_READY,
+        LlmErrorCode.LOCAL_LOAD_FAILED,
+        LlmErrorCode.LOCAL_INFERENCE_FAILED,
+    ),
+)
+
+/** 带 RGBA 像素的视觉请求。像素按行优先、每像素 4 字节排列。 */
+data class LlmImageRequest(
+    val rgba: ByteArray,
+    val width: Int,
+    val height: Int,
+    val systemPrompt: String,
+    val userPrompt: String,
+) {
+    init {
+        require(width > 0 && height > 0) { "图片尺寸必须大于 0" }
+        require(rgba.size == width * height * 4) { "RGBA 像素长度与图片尺寸不匹配" }
+    }
 }
 
 interface LlmGateway {
@@ -83,4 +168,11 @@ interface LlmGateway {
     suspend fun isAvailable(task: LlmTaskType): Boolean
 
     suspend fun complete(task: LlmTaskType, systemPrompt: String, userPrompt: String): LlmResult
+
+    /** 视觉请求的可选扩展；文本网关默认返回结构化的不支持错误。 */
+    suspend fun completeImage(task: LlmTaskType, request: LlmImageRequest): LlmResult =
+        LlmResult.Failure(
+            "当前模型不支持图片理解",
+            LlmError(LlmErrorCode.UNSUPPORTED, "当前模型不支持图片理解"),
+        )
 }

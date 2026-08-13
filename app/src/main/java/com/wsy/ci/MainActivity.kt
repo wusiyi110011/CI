@@ -18,12 +18,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +44,10 @@ import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.feature.calendar.CalendarScreen
 import com.wsy.ci.feature.quest.QuestScreen
 import com.wsy.ci.feature.settings.SettingsScreen
+import com.wsy.ci.feature.settings.LocalModelInstallState
+import com.wsy.ci.feature.settings.LocalModelController
+import com.wsy.ci.feature.settings.LocalModelServiceState
+import com.wsy.ci.feature.settings.DataBackupController
 import com.wsy.ci.feature.shop.ShopScreen
 import com.wsy.ci.feature.stats.StatsScreen
 import com.wsy.ci.feature.today.TodayScreen
@@ -58,6 +65,11 @@ private enum class Destination(
 }
 
 class MainActivity : ComponentActivity() {
+    private val localModelController: LocalModelController
+        get() = (application as CiApp).container.localModelController
+    private val dataBackupController: DataBackupController
+        get() = (application as CiApp).container.dataBackupController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val appSettings = (application as CiApp).container.appSettings
@@ -68,20 +80,45 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.surface,
                 ) {
-                    CiRoot()
+                    CiRoot(localModelController, dataBackupController)
                 }
             }
         }
     }
+
+    override fun onStop() {
+        localModelController.stopService()
+        super.onStop()
+    }
 }
 
 @Composable
-private fun CiRoot() {
+private fun CiRoot(
+    localModelController: LocalModelController,
+    dataBackupController: DataBackupController,
+) {
     var destination by rememberSaveable { mutableStateOf(Destination.TODAY) }
+    val localModelState by localModelController.state.collectAsState()
+    var confirmCancelInference by rememberSaveable { mutableStateOf(false) }
     Row(modifier = Modifier.fillMaxSize()) {
         CiNavigationRail(
             selected = destination,
+            localModelState = localModelState,
             onSelect = { destination = it },
+            onAiClick = {
+                when (localModelState.serviceState) {
+                    LocalModelServiceState.OFF -> {
+                        if (localModelState.installState == LocalModelInstallState.INSTALLED) {
+                            localModelController.startService()
+                        } else {
+                            destination = Destination.SETTINGS
+                        }
+                    }
+                    LocalModelServiceState.STARTING -> localModelController.stopService()
+                    LocalModelServiceState.ON -> localModelController.stopService()
+                    LocalModelServiceState.INFERENCING -> confirmCancelInference = true
+                }
+            },
         )
         Box(modifier = Modifier.weight(1f)) {
             when (destination) {
@@ -93,9 +130,30 @@ private fun CiRoot() {
                 )
                 Destination.SHOP -> ShopScreen()
                 Destination.STATS -> StatsScreen()
-                Destination.SETTINGS -> SettingsScreen()
+                Destination.SETTINGS -> SettingsScreen(
+                    localModelController = localModelController,
+                    backupController = dataBackupController,
+                )
             }
         }
+    }
+    if (confirmCancelInference) {
+        AlertDialog(
+            onDismissRequest = { confirmCancelInference = false },
+            title = { Text("取消本地推理？") },
+            text = { Text("确认后会停止本次推理并关闭本地服务。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmCancelInference = false
+                        localModelController.cancelInferenceAndStop()
+                    },
+                ) { Text("确认取消并关闭") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCancelInference = false }) { Text("继续推理") }
+            },
+        )
     }
 }
 
@@ -105,7 +163,12 @@ private fun CiRoot() {
  * 顶部对齐会在下方留一大片空白。
  */
 @Composable
-private fun CiNavigationRail(selected: Destination, onSelect: (Destination) -> Unit) {
+private fun CiNavigationRail(
+    selected: Destination,
+    localModelState: com.wsy.ci.feature.settings.LocalModelUiState,
+    onSelect: (Destination) -> Unit,
+    onAiClick: () -> Unit,
+) {
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
     Column(
         modifier = Modifier
@@ -115,15 +178,66 @@ private fun CiNavigationRail(selected: Destination, onSelect: (Destination) -> U
             .rightEdge(edgeColor)
             .padding(vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.Top,
     ) {
-        Destination.entries.forEach { destination ->
-            NavRailItem(
-                destination = destination,
-                isSelected = destination == selected,
-                onClick = { onSelect(destination) },
-            )
+        Box(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Destination.entries.forEach { destination ->
+                    NavRailItem(
+                        destination = destination,
+                        isSelected = destination == selected,
+                        onClick = { onSelect(destination) },
+                    )
+                }
+            }
         }
+        AiQuickEntry(state = localModelState, onClick = onAiClick)
+    }
+}
+
+@Composable
+private fun AiQuickEntry(
+    state: com.wsy.ci.feature.settings.LocalModelUiState,
+    onClick: () -> Unit,
+) {
+    val active = state.serviceState != LocalModelServiceState.OFF
+    val content = if (active) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        modifier = Modifier
+            .size(CiSizes.navRailItem)
+            .clip(CiShapes.fab)
+            .background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Image(
+            painter = painterResource(
+                if (active) R.drawable.ic_ai_local_on else R.drawable.ic_ai_local_off,
+            ),
+            contentDescription = "本地 AI",
+            modifier = Modifier.size(CiSizes.navRailAiIcon),
+        )
+        Text(
+            text = when (state.serviceState) {
+                LocalModelServiceState.OFF -> "本地 AI"
+                LocalModelServiceState.STARTING -> "启动中"
+                LocalModelServiceState.ON -> "已开启"
+                LocalModelServiceState.INFERENCING -> "推理中"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+        )
     }
 }
 

@@ -1,9 +1,8 @@
-"""从 icon/gemini.jpeg 生成整套 Android 启动图标资源。
+"""从本地 AI 人物的明亮开启态生成整套 Android 启动图标资源。
 
-原稿是 AI 出的方图：非正方、自带圆角方形外壳、主体顶到边缘。这里统一整备：
-抠掉浅色底 → 按主体真实最大半径缩进自适应图标的安全圆 → 切各密度资源。
+原稿是透明 PNG。这里统一按可见主体缩进自适应图标安全圆，再切各密度资源。
 
-跑法：/opt/miniconda3/envs/claude/bin/python icon/generate.py
+跑法：/opt/miniconda3/envs/Codex/bin/python icon/generate.py
 """
 from pathlib import Path
 
@@ -12,19 +11,12 @@ from PIL import Image, ImageDraw
 
 HERE = Path(__file__).parent
 RES = HERE.parent / "app/src/main/res"
-SRC = HERE / "gemini.jpeg"
+SRC = HERE / "ai_local_light_on.png"
 
 PAPER = "#F7F3EA"          # 与 Color.kt 的 PaperLight 一致
 CANVAS = 1024
 VISIBLE_RATIO = 72 / 108   # 自适应图标 108dp 画布中一定可见的中心区域
 TARGET_RADIUS = 318        # 主体外接圆目标半径，比安全半径 341 再留余量
-
-# 抠图：要么带明显色相（金铜书脊），要么足够暗（石墨描边）。
-SATURATION_FLOOR = 28
-LUMA_CEILING = 200
-# 几何测量用的严判定，避开外壳投影与 JPEG 噪点。
-SOLID_SATURATION = 45
-SOLID_LUMA = 170
 
 FOREGROUND_DP = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
 LEGACY_PX = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
@@ -36,22 +28,14 @@ def _rgb(hex_color: str) -> np.ndarray:
 
 def build_foreground() -> Image.Image:
     """整备成 1024×1024 的 RGBA 前景层：主体居中缩进安全圆，其余透明。"""
-    arr = np.asarray(Image.open(SRC).convert("RGB")).astype(np.float32)
-    spread = arr.max(axis=2) - arr.min(axis=2)
-    luma = arr.mean(axis=2)
-
-    alpha = np.maximum(
-        np.clip(spread / SATURATION_FLOOR, 0, 1),
-        np.clip((LUMA_CEILING - luma) / 60, 0, 1),
-    )
-    solid = (spread > SOLID_SATURATION) | (luma < SOLID_LUMA)
+    arr = np.asarray(Image.open(SRC).convert("RGBA"))
+    solid = arr[..., 3] > 12
     ys, xs = np.nonzero(solid)
     box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
     max_radius = float(np.hypot(xs - cx, ys - cy).max())
 
-    rgba = np.dstack([arr, alpha * 255]).astype(np.uint8)
-    subject = Image.fromarray(rgba, mode="RGBA").crop(box)
+    subject = Image.fromarray(arr, mode="RGBA").crop(box)
 
     scale = TARGET_RADIUS / max_radius
     sized = subject.resize(
@@ -70,7 +54,7 @@ def build_monochrome(foreground: Image.Image) -> Image.Image:
     """
     arr = np.asarray(foreground).astype(np.float32)
     opaque = arr[..., 3] > 128
-    ink = (arr[..., :3].mean(axis=2) < SOLID_LUMA) & opaque
+    ink = (arr[..., :3].mean(axis=2) < 175) & opaque
     alpha = (ink * 255).astype(np.uint8)
     mono = np.zeros((*alpha.shape, 4), dtype=np.uint8)
     mono[..., 3] = alpha

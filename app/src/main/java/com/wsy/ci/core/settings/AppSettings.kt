@@ -37,6 +37,11 @@ class AppSettings(context: Context) {
         _themeMode.value = mode
     }
 
+    /** 导入数据备份后重新读取磁盘偏好，并立即刷新界面主题。 */
+    fun reload() {
+        _themeMode.value = readThemeMode()
+    }
+
     /** 存的是枚举名；万一读到旧值或脏值，退回跟随系统而不是崩掉。 */
     private fun readThemeMode(): ThemeMode {
         val raw = prefs.getString(KEY_THEME_MODE, null) ?: return ThemeMode.SYSTEM
