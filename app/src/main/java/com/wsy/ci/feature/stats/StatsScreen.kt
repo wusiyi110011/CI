@@ -66,8 +66,8 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
     val period by viewModel.period.collectAsState()
     val recordFilter by viewModel.recordFilter.collectAsState()
     val domainFilter by viewModel.domainFilter.collectAsState()
-    val questTypeFilter by viewModel.questTypeFilter.collectAsState()
-    val titleFilter by viewModel.titleFilter.collectAsState()
+    val mainFilter by viewModel.mainFilter.collectAsState()
+    val sideFilter by viewModel.sideFilter.collectAsState()
     val activeRecordFilters by viewModel.activeRecordFilters.collectAsState()
     val data by viewModel.data.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
@@ -128,13 +128,13 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                         records = d.records,
                         statusFilter = recordFilter,
                         domainFilter = domainFilter,
-                        questTypeFilter = questTypeFilter,
-                        titleFilter = titleFilter,
+                        mainFilter = mainFilter,
+                        sideFilter = sideFilter,
                         activeFilters = activeRecordFilters,
                         onStatusFilter = viewModel::setRecordFilter,
                         onDomainFilter = viewModel::applyDomainFilter,
-                        onQuestTypeFilter = viewModel::applyQuestTypeFilter,
-                        onTitleFilter = viewModel::applyTitleFilter,
+                        onMainFilter = viewModel::applyMainFilter,
+                        onSideFilter = viewModel::applySideFilter,
                         onRemoveFilter = viewModel::removeRecordFilter,
                         onRecordClick = { detailRecord = it },
                         modifier = Modifier.fillMaxWidth(),

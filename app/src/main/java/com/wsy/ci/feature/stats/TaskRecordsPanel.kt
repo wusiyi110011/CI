@@ -59,25 +59,26 @@ fun filterRecords(
     records: List<TaskRecord>,
     status: RecordFilter,
     domain: DomainFilter,
-    questType: QuestTypeFilter = QuestTypeFilter.All,
-    title: TitleFilter = TitleFilter.All,
+    main: QuestFilter = QuestFilter.All,
+    side: QuestFilter = QuestFilter.All,
+    activeFilters: Set<RecordFilterKind> = emptySet(),
 ): List<TaskRecord> = records.filter { record ->
     val statusOk = status.matches(record.task.status)
     val domainOk = when (domain) {
         DomainFilter.All -> true
         is DomainFilter.Only -> record.task.domainId == domain.domainId
     }
-    val questTypeOk = questType.matches(record.questType)
-    val titleOk = when (title) {
-        TitleFilter.All -> true
-        is TitleFilter.Current -> record.currentTitle == title.title
+    val mainActive = RecordFilterKind.MAIN in activeFilters
+    val sideActive = RecordFilterKind.SIDE in activeFilters
+    val questOk = when {
+        !mainActive && !sideActive -> true
+        mainActive && sideActive ->
+            (record.questType == QuestType.MAIN && questMatches(record, main)) ||
+                (record.questType == QuestType.SIDE && questMatches(record, side))
+        mainActive -> record.questType == QuestType.MAIN && questMatches(record, main)
+        else -> record.questType == QuestType.SIDE && questMatches(record, side)
     }
-    statusOk && domainOk && questTypeOk && titleOk
-}
-
-fun QuestTypeFilter.matches(type: QuestType?): Boolean = when (this) {
-    QuestTypeFilter.All -> true
-    is QuestTypeFilter.Only -> type == this.type
+    statusOk && domainOk && questOk
 }
 
 fun domainMatches(record: TaskRecord, domain: DomainFilter): Boolean = when (domain) {
@@ -85,9 +86,9 @@ fun domainMatches(record: TaskRecord, domain: DomainFilter): Boolean = when (dom
     is DomainFilter.Only -> record.task.domainId == domain.domainId
 }
 
-fun titleOptions(records: List<TaskRecord>): Set<TitleFilter> = buildSet {
-    add(TitleFilter.All)
-    records.mapNotNull { it.currentTitle }.distinct().forEach { add(TitleFilter.Current(it)) }
+fun questMatches(record: TaskRecord, quest: QuestFilter): Boolean = when (quest) {
+    QuestFilter.All -> true
+    is QuestFilter.Only -> record.task.questId == quest.questId
 }
 
 /**
@@ -101,18 +102,18 @@ fun TaskRecordsPanel(
     records: List<TaskRecord>,
     statusFilter: RecordFilter,
     domainFilter: DomainFilter,
-    questTypeFilter: QuestTypeFilter = QuestTypeFilter.All,
-    titleFilter: TitleFilter = TitleFilter.All,
+    mainFilter: QuestFilter = QuestFilter.All,
+    sideFilter: QuestFilter = QuestFilter.All,
     activeFilters: Set<RecordFilterKind> = emptySet(),
     onStatusFilter: (RecordFilter) -> Unit,
     onDomainFilter: (DomainFilter) -> Unit,
-    onQuestTypeFilter: (QuestTypeFilter) -> Unit = {},
-    onTitleFilter: (TitleFilter) -> Unit = {},
+    onMainFilter: (QuestFilter) -> Unit = {},
+    onSideFilter: (QuestFilter) -> Unit = {},
     onRemoveFilter: (RecordFilterKind) -> Unit = {},
     onRecordClick: (TaskRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val filtered = filterRecords(records, statusFilter, domainFilter, questTypeFilter, titleFilter)
+    val filtered = filterRecords(records, statusFilter, domainFilter, mainFilter, sideFilter, activeFilters)
     val totalMinutes = filtered.sumOf { it.actualMinutes }
     val totalCi = filtered.sumOf { it.rewardCi }
     var showFilterDialog by remember { mutableStateOf(false) }
@@ -139,8 +140,8 @@ fun TaskRecordsPanel(
             records = records,
             activeFilters = activeFilters,
             domain = domainFilter,
-            questType = questTypeFilter,
-            title = titleFilter,
+            main = mainFilter,
+            side = sideFilter,
             onRemove = onRemoveFilter,
         )
 
@@ -165,8 +166,8 @@ fun TaskRecordsPanel(
         AddRecordFilterDialog(
             records = records,
             onDomainFilter = onDomainFilter,
-            onQuestTypeFilter = onQuestTypeFilter,
-            onTitleFilter = onTitleFilter,
+            onMainFilter = onMainFilter,
+            onSideFilter = onSideFilter,
             onDismiss = { showFilterDialog = false },
         )
     }
@@ -200,8 +201,8 @@ private fun ActiveFilterChips(
     records: List<TaskRecord>,
     activeFilters: Set<RecordFilterKind>,
     domain: DomainFilter,
-    questType: QuestTypeFilter,
-    title: TitleFilter,
+    main: QuestFilter,
+    side: QuestFilter,
     onRemove: (RecordFilterKind) -> Unit,
 ) {
     if (activeFilters.isEmpty()) return
@@ -217,14 +218,8 @@ private fun ActiveFilterChips(
                     DomainFilter.All -> null
                     is DomainFilter.Only -> domainNames[domain.domainId] ?: "未分类"
                 }
-                RecordFilterKind.QUEST_TYPE -> when (questType) {
-                    QuestTypeFilter.All -> null
-                    is QuestTypeFilter.Only -> if (questType.type == QuestType.MAIN) "主线" else "支线"
-                }
-                RecordFilterKind.TITLE -> when (title) {
-                    TitleFilter.All -> null
-                    is TitleFilter.Current -> title.title
-                }
+                RecordFilterKind.MAIN -> questFilterLabel(records, main, QuestType.MAIN)
+                RecordFilterKind.SIDE -> questFilterLabel(records, side, QuestType.SIDE)
             }
             RemovableFilterChip(
                 text = kind.label + value?.let { "：$it" }.orEmpty(),
@@ -259,15 +254,26 @@ private fun RemovableFilterChip(text: String, onRemove: () -> Unit) {
     }
 }
 
+private fun questFilterLabel(
+    records: List<TaskRecord>,
+    filter: QuestFilter,
+    type: QuestType,
+): String? = when (filter) {
+    QuestFilter.All -> null
+    is QuestFilter.Only -> records.firstOrNull {
+        it.questType == type && it.task.questId == filter.questId
+    }?.questTitle ?: "具体任务线"
+}
+
 @Composable
 private fun AddRecordFilterDialog(
     records: List<TaskRecord>,
     onDomainFilter: (DomainFilter) -> Unit,
-    onQuestTypeFilter: (QuestTypeFilter) -> Unit,
-    onTitleFilter: (TitleFilter) -> Unit,
+    onMainFilter: (QuestFilter) -> Unit,
+    onSideFilter: (QuestFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var kind by remember { mutableStateOf(RecordFilterKind.DOMAIN) }
+    var kind by remember { mutableStateOf(RecordFilterKind.MAIN) }
     var valueKey by remember(kind) { mutableStateOf<String?>(null) }
     val options = remember(records, kind) { filterValueOptions(records, kind) }
 
@@ -282,13 +288,8 @@ private fun AddRecordFilterDialog(
                         DomainFilter.Only(if (key == NULL_DOMAIN_KEY) null else key.toLong())
                     } ?: DomainFilter.All
                 )
-                RecordFilterKind.QUEST_TYPE -> onQuestTypeFilter(
-                    valueKey?.let { QuestTypeFilter.Only(QuestType.valueOf(it)) }
-                        ?: QuestTypeFilter.All
-                )
-                RecordFilterKind.TITLE -> onTitleFilter(
-                    valueKey?.let(TitleFilter::Current) ?: TitleFilter.All
-                )
+                RecordFilterKind.MAIN -> onMainFilter(valueKey?.let { QuestFilter.Only(it.toLong()) } ?: QuestFilter.All)
+                RecordFilterKind.SIDE -> onSideFilter(valueKey?.let { QuestFilter.Only(it.toLong()) } ?: QuestFilter.All)
             }
             onDismiss()
         },
@@ -345,10 +346,12 @@ private fun filterValueOptions(
         .map { (it.task.domainId?.toString() ?: NULL_DOMAIN_KEY) to it.domainName }
         .distinctBy { it.first }
         .sortedBy { it.second }
-    RecordFilterKind.QUEST_TYPE -> records.mapNotNull { it.questType }.distinct().map { type ->
-        type.name to if (type == QuestType.MAIN) "主线" else "支线"
-    }
-    RecordFilterKind.TITLE -> records.mapNotNull { it.currentTitle }.distinct().sorted().map { it to it }
+    RecordFilterKind.MAIN -> records.filter { it.questType == QuestType.MAIN }
+        .mapNotNull { record -> record.task.questId?.let { id -> id.toString() to (record.questTitle ?: "主线任务") } }
+        .distinctBy { it.first }.sortedBy { it.second }
+    RecordFilterKind.SIDE -> records.filter { it.questType == QuestType.SIDE }
+        .mapNotNull { record -> record.task.questId?.let { id -> id.toString() to (record.questTitle ?: "支线任务") } }
+        .distinctBy { it.first }.sortedBy { it.second }
 }
 
 @Composable

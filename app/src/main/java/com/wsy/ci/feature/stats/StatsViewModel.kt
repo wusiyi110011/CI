@@ -12,7 +12,6 @@ import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.stats.sessionMinuteBuckets
 import com.wsy.ci.core.util.TimeFormat
-import com.wsy.ci.core.title.Titles
 import com.wsy.ci.llm.LlmParsed
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -37,8 +36,6 @@ data class TaskRecord(
     /** 任务线信息为快照派生值；空表示该任务未关联任务线。 */
     val questType: QuestType? = null,
     val questTitle: String? = null,
-    /** 当前领域头衔；未分类任务没有头衔。 */
-    val currentTitle: String? = null,
 )
 
 /** 明细列表的状态筛选。RUNNING 归到「未完成」，用户视角里它确实还没完成。 */
@@ -65,23 +62,17 @@ sealed interface DomainFilter {
     data class Only(val domainId: Long?) : DomainFilter
 }
 
-/** 任务类型筛选。 */
-sealed interface QuestTypeFilter {
-    data object All : QuestTypeFilter
-    data class Only(val type: QuestType) : QuestTypeFilter
-}
-
-/** 按领域当前头衔筛选；这是当前状态，不是历史快照。 */
-sealed interface TitleFilter {
-    data object All : TitleFilter
-    data class Current(val title: String) : TitleFilter
+/** 某一类任务线的筛选；All 表示该类全部，Only 表示具体任务线。 */
+sealed interface QuestFilter {
+    data object All : QuestFilter
+    data class Only(val questId: Long) : QuestFilter
 }
 
 /** 任务明细里已经添加到状态栏下方的筛选维度。 */
 enum class RecordFilterKind(val label: String) {
+    MAIN("主线"),
+    SIDE("支线"),
     DOMAIN("领域"),
-    QUEST_TYPE("任务类型"),
-    TITLE("头衔"),
 }
 
 data class StatsData(
@@ -121,8 +112,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     /** 默认落在「已完成」——这个面板的主用途就是回看做完的事。 */
     val recordFilter = MutableStateFlow(RecordFilter.DONE)
     val domainFilter = MutableStateFlow<DomainFilter>(DomainFilter.All)
-    val questTypeFilter = MutableStateFlow<QuestTypeFilter>(QuestTypeFilter.All)
-    val titleFilter = MutableStateFlow<TitleFilter>(TitleFilter.All)
+    val mainFilter = MutableStateFlow<QuestFilter>(QuestFilter.All)
+    val sideFilter = MutableStateFlow<QuestFilter>(QuestFilter.All)
     val activeRecordFilters = MutableStateFlow<Set<RecordFilterKind>>(emptySet())
     val data = MutableStateFlow<StatsData?>(null)
     val analysis = MutableStateFlow<String?>(null)
@@ -138,8 +129,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         analysis.value = null
         // 换周期后原来选中的领域可能在新周期里没有任何任务，重置回「全部」免得列表空得莫名其妙
         domainFilter.value = DomainFilter.All
-        questTypeFilter.value = QuestTypeFilter.All
-        titleFilter.value = TitleFilter.All
+        mainFilter.value = QuestFilter.All
+        sideFilter.value = QuestFilter.All
         activeRecordFilters.value = emptySet()
         refresh()
     }
@@ -153,21 +144,21 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         activeRecordFilters.value += RecordFilterKind.DOMAIN
     }
 
-    fun applyQuestTypeFilter(f: QuestTypeFilter) {
-        questTypeFilter.value = f
-        activeRecordFilters.value += RecordFilterKind.QUEST_TYPE
+    fun applyMainFilter(f: QuestFilter) {
+        mainFilter.value = f
+        activeRecordFilters.value += RecordFilterKind.MAIN
     }
 
-    fun applyTitleFilter(f: TitleFilter) {
-        titleFilter.value = f
-        activeRecordFilters.value += RecordFilterKind.TITLE
+    fun applySideFilter(f: QuestFilter) {
+        sideFilter.value = f
+        activeRecordFilters.value += RecordFilterKind.SIDE
     }
 
     fun removeRecordFilter(kind: RecordFilterKind) {
         when (kind) {
             RecordFilterKind.DOMAIN -> domainFilter.value = DomainFilter.All
-            RecordFilterKind.QUEST_TYPE -> questTypeFilter.value = QuestTypeFilter.All
-            RecordFilterKind.TITLE -> titleFilter.value = TitleFilter.All
+            RecordFilterKind.MAIN -> mainFilter.value = QuestFilter.All
+            RecordFilterKind.SIDE -> sideFilter.value = QuestFilter.All
         }
         activeRecordFilters.value -= kind
     }
@@ -202,7 +193,6 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val totalMinutes = sessions.sumOf(minutesOf)
 
         val domainName = domains.associateBy({ it.id }, { it })
-        val currentTitleByDomain = domains.associate { it.id to Titles.currentTitle(it) }
         val questById = quests.associateBy { it.id }
         val byDomain = sessions.groupBy { it.domainId }
             .map { (id, list) ->
@@ -239,7 +229,6 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                     expGained = own.sumOf { it.expGained },
                     questType = task.questId?.let { questById[it]?.type },
                     questTitle = task.questId?.let { questById[it]?.title },
-                    currentTitle = task.domainId?.let(currentTitleByDomain::get),
                 )
             }
 
