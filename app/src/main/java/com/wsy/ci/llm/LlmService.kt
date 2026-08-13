@@ -39,7 +39,7 @@ data class PricedItem(
 
 sealed interface LlmParsed<out T> {
     data class Ok<T>(val value: T) : LlmParsed<T>
-    data class Err(val message: String) : LlmParsed<Nothing>
+    data class Err(val message: String, val error: LlmError? = null) : LlmParsed<Nothing>
 }
 
 /** 面向业务的 LLM 服务：拼 prompt、调网关、解析结构化 JSON。 */
@@ -64,7 +64,7 @@ class LlmService(private val gateway: LlmGateway) {
         """.trimIndent()
         val user = "领域：$domainName\n每周可投入：$weeklyHours 小时\n目标：${goal.ifBlank { "系统入门到能实战" }}"
         return when (val result = gateway.complete(LlmTaskType.ROUTE_GEN, system, user)) {
-            is LlmResult.Failure -> LlmParsed.Err(result.message)
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> try {
                 val plan = json.decodeFromString<RoutePlan>(extractJson(result.content))
                 if (plan.chapters.isEmpty()) LlmParsed.Err("模型未返回章节，请重试")
@@ -85,7 +85,7 @@ class LlmService(private val gateway: LlmGateway) {
             「上午」=09:00-12:00，「下午」=14:00-18:00，「晚上」=19:00-22:00，「全天」=08:00-22:00。
         """.trimIndent()
         return when (val result = gateway.complete(LlmTaskType.NL_PARSE, system, text)) {
-            is LlmResult.Failure -> LlmParsed.Err(result.message)
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> try {
                 val list = json.decodeFromString<List<ParsedBlocker>>(extractJson(result.content))
                 if (list.isEmpty()) LlmParsed.Err("没有解析出时间段，请说得再具体些")
@@ -103,7 +103,7 @@ class LlmService(private val gateway: LlmGateway) {
             只输出 JSON 数组：["头衔1","头衔2","头衔3","头衔4","头衔5","头衔6"]
         """.trimIndent()
         return when (val result = gateway.complete(LlmTaskType.TITLE_GEN, system, "领域：$domainName")) {
-            is LlmResult.Failure -> LlmParsed.Err(result.message)
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> try {
                 val titles = json.decodeFromString<List<String>>(extractJson(result.content))
                 if (titles.size >= Economy.MAX_LEVEL) LlmParsed.Ok(titles.take(Economy.MAX_LEVEL))
@@ -121,7 +121,7 @@ class LlmService(private val gateway: LlmGateway) {
             只输出 JSON：{"priceYuan":123.0,"emoji":"🎬","description":"一句话描述"}
         """.trimIndent()
         return when (val result = gateway.complete(LlmTaskType.ITEM_PRICING, system, name)) {
-            is LlmResult.Failure -> LlmParsed.Err(result.message)
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> try {
                 val item = json.decodeFromString<PricedItem>(extractJson(result.content))
                 val priceCi = (item.priceYuan * Economy.CI_PER_YUAN).toLong().coerceAtLeast(1)
@@ -140,7 +140,7 @@ class LlmService(private val gateway: LlmGateway) {
             用简体中文，条理清晰，总字数 300 字以内。
         """.trimIndent()
         return when (val result = gateway.complete(LlmTaskType.REVIEW_ANALYSIS, system, summary)) {
-            is LlmResult.Failure -> LlmParsed.Err(result.message)
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> LlmParsed.Ok(result.content.trim())
         }
     }

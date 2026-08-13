@@ -49,9 +49,23 @@ class OpenAiCompatClient(private val settings: LlmSettings) : LlmGateway {
         userPrompt: String,
     ): LlmResult = withContext(Dispatchers.IO) {
         val provider = settings.resolveEndpoint(task)
-            ?: return@withContext LlmResult.Failure("「${task.label}」未配置可用的模型，请到设置页填入 API Key")
+            ?: return@withContext LlmResult.Failure(
+                "「${task.label}」未配置可用的模型，请到设置页填入 API Key",
+                LlmError(
+                    code = if (settings.routeSelection(task) == LlmRoute.Off) {
+                        LlmErrorCode.ROUTE_OFF
+                    } else {
+                        LlmErrorCode.API_UNAVAILABLE
+                    },
+                    message = "「${task.label}」未配置可用的模型，请到设置页填入 API Key",
+                    source = LlmErrorSource.API,
+                ),
+            )
         val key = settings.apiKey(provider.keyId)
-            ?: return@withContext LlmResult.Failure("${provider.label} 未配置 API Key")
+            ?: return@withContext LlmResult.Failure(
+                "${provider.label} 未配置 API Key",
+                LlmError(LlmErrorCode.API_UNAVAILABLE, "${provider.label} 未配置 API Key", LlmErrorSource.API),
+            )
 
         val body = json.encodeToString(
             ChatRequest(
@@ -79,21 +93,31 @@ class OpenAiCompatClient(private val settings: LlmSettings) : LlmGateway {
                 val text = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     return@withContext LlmResult.Failure(
-                        "${provider.label} 返回 ${response.code}：${text.take(200)}"
+                        "${provider.label} 返回 ${response.code}：${text.take(200)}",
+                        LlmError(LlmErrorCode.API_UNAVAILABLE, "${provider.label} 返回 ${response.code}：${text.take(200)}", LlmErrorSource.API),
                     )
                 }
                 val content = json.decodeFromString<ChatResponse>(text)
                     .choices.firstOrNull()?.message?.content
                 if (content.isNullOrBlank()) {
-                    LlmResult.Failure("${provider.label} 返回内容为空")
+                    LlmResult.Failure(
+                        "${provider.label} 返回内容为空",
+                        LlmError(LlmErrorCode.API_UNAVAILABLE, "${provider.label} 返回内容为空", LlmErrorSource.API),
+                    )
                 } else {
                     LlmResult.Success(content)
                 }
             }
         } catch (e: IOException) {
-            LlmResult.Failure("网络错误：${e.message ?: "连接失败"}")
+            LlmResult.Failure(
+                "网络错误：${e.message ?: "连接失败"}",
+                LlmError(LlmErrorCode.API_UNAVAILABLE, "网络错误：${e.message ?: "连接失败"}", LlmErrorSource.API),
+            )
         } catch (e: Exception) {
-            LlmResult.Failure("解析响应失败：${e.message ?: e.javaClass.simpleName}")
+            LlmResult.Failure(
+                "解析响应失败：${e.message ?: e.javaClass.simpleName}",
+                LlmError(LlmErrorCode.API_UNAVAILABLE, "解析响应失败：${e.message ?: e.javaClass.simpleName}", LlmErrorSource.API),
+            )
         }
     }
 }
