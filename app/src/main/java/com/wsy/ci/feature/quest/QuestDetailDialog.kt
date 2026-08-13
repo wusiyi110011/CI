@@ -204,10 +204,11 @@ private fun QuestHeadline(
             )
         }
         Text(
-            text = "完成 ${progress.done}/${progress.total} 个任务" +
+            text = "已处理 ${progress.done + progress.skipped}/${progress.total} 个任务" +
+                "（完成 ${progress.done}，跳过 ${progress.skipped}）" +
                 " · 计划 ${TimeFormat.duration(progress.plannedMinutes)}" +
                 " · 已完成 ${TimeFormat.duration(progress.doneMinutes)}" +
-                if (progress.skipped > 0) " · 跳过 ${progress.skipped} 个" else "",
+                if (progress.running > 0) " · 进行中 ${progress.running} 个" else "",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

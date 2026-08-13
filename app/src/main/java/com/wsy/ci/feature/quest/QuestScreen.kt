@@ -49,8 +49,8 @@ import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.designsystem.CiUnderlineTabs
 import com.wsy.ci.core.economy.Economy
+import com.wsy.ci.core.quest.QuestProgress
 import com.wsy.ci.core.title.Titles
-import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.feature.today.TaskEditorDialog
 import java.time.LocalDate
 
@@ -78,6 +78,7 @@ fun QuestScreen(
 ) {
     val quests by viewModel.quests.collectAsState()
     val domains by viewModel.domains.collectAsState()
+    val allTasks by viewModel.allTasks.collectAsState()
     val message by viewModel.message.collectAsState()
     val routeGen by viewModel.routeGen.collectAsState()
     val importPending by viewModel.importPending.collectAsState()
@@ -96,6 +97,8 @@ fun QuestScreen(
     var editing by remember { mutableStateOf<QuestEntity?>(null) }
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
     var openedDomain by remember { mutableStateOf<DomainEntity?>(null) }
+    var editingDomain by remember { mutableStateOf<DomainEntity?>(null) }
+    var deletingDomain by remember { mutableStateOf<DomainEntity?>(null) }
     var deleting by remember { mutableStateOf<QuestEntity?>(null) }
     var showRouteGen by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
@@ -159,6 +162,7 @@ fun QuestScreen(
             when (tab) {
                 QuestTab.MAIN_SIDE -> QuestBoard(
                     quests = activeQuests,
+                    tasks = allTasks,
                     emptyHint = "还没有进行中的任务线，点右下角创建第一条吧",
                     onOpen = viewModel::openQuest,
                     onEdit = { editing = it },
@@ -170,6 +174,7 @@ fun QuestScreen(
                 )
                 QuestTab.FINISHED -> QuestBoard(
                     quests = finishedQuests,
+                    tasks = allTasks,
                     emptyHint = "还没有完成或归档的任务线。完成一条主线/支线后它会挪到这里，" +
                         "点开仍能回看当初排出的具体任务。",
                     onOpen = viewModel::openQuest,
@@ -195,7 +200,35 @@ fun QuestScreen(
             domain = domain,
             quests = quests,
             onOpenQuest = { viewModel.openQuest(it); openedDomain = null },
+            onEditDomain = { editingDomain = it; openedDomain = null },
+            onDeleteDomain = {
+                deletingDomain = it
+                openedDomain = null
+            },
             onDismiss = { openedDomain = null },
+        )
+    }
+
+    deletingDomain?.let { domain ->
+        DeleteDomainDialog(
+            domain = domain,
+            onConfirm = {
+                viewModel.deleteDomain(domain)
+                deletingDomain = null
+                openedDomain = null
+            },
+            onDismiss = { deletingDomain = null },
+        )
+    }
+
+    editingDomain?.let { domain ->
+        DomainEditorDialog(
+            initial = domain,
+            onSave = { name, titles ->
+                viewModel.saveDomain(domain, name, titles)
+                editingDomain = null
+            },
+            onDismiss = { editingDomain = null },
         )
     }
 
@@ -343,6 +376,7 @@ private fun DeleteQuestDialog(
 @Composable
 private fun QuestBoard(
     quests: List<QuestEntity>,
+    tasks: List<TaskEntity>,
     emptyHint: String,
     onOpen: (QuestEntity) -> Unit,
     onEdit: (QuestEntity) -> Unit,
@@ -354,6 +388,7 @@ private fun QuestBoard(
 ) {
     val mains = quests.filter { it.type == QuestType.MAIN }
     val sides = quests.filter { it.type == QuestType.SIDE }
+    val tasksByQuest = remember(tasks) { tasks.groupBy { it.questId } }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
@@ -384,6 +419,7 @@ private fun QuestBoard(
                     mains.forEach { quest ->
                         MainQuestCard(
                             quest = quest,
+                            progress = QuestProgress.of(tasksByQuest[quest.id].orEmpty()),
                             onOpen = onOpen,
                             onEdit = onEdit,
                             onComplete = onComplete,
@@ -462,6 +498,7 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun MainQuestCard(
     quest: QuestEntity,
+    progress: QuestProgress,
     onOpen: (QuestEntity) -> Unit,
     onEdit: (QuestEntity) -> Unit,
     onComplete: (QuestEntity) -> Unit,
@@ -472,7 +509,6 @@ private fun MainQuestCard(
 ) {
     val today = LocalDate.now().toEpochDay()
     val daysLeft = quest.deadlineEpochDay?.minus(today)
-    val progress = timeProgress(quest, today)
 
     CiPanelCard(
         modifier = modifier.height(MAIN_CARD_HEIGHT).clickable { onOpen(quest) },
@@ -535,34 +571,23 @@ private fun MainQuestCard(
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Text(
-                        text = if (progress != null) {
-                            "时间进度 ${(progress * 100).toInt()}%"
+                        text = if (progress.total > 0) {
+                            "任务进度 ${progress.done + progress.skipped}/${progress.total} · " +
+                                "已处理 ${(progress.ratio * 100).toInt()}%"
                         } else {
-                            quest.description.takeIf { it.isNotBlank() } ?: ""
+                            "暂无具体任务"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 CiProgressBar(
-                    progress = progress ?: 0f,
+                    progress = progress.ratio,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
     }
-}
-
-/**
- * 主线的时间进度：createdAt 到截止日之间已走过的比例。
- * 数据层未记录「已完成章节数」，故这里表达的是时间消耗而非内容完成度，标签已注明。
- */
-private fun timeProgress(quest: QuestEntity, today: Long): Float? {
-    val deadline = quest.deadlineEpochDay ?: return null
-    val startDay = TimeFormat.millisToEpochDay(quest.createdAt)
-    val span = (deadline - startDay).toFloat()
-    if (span <= 0f) return 1f
-    return ((today - startDay) / span).coerceIn(0f, 1f)
 }
 
 /** 支线卡：标题 + 🔥连击 chip + 历史最佳。整卡可点，打开任务线详情。 */

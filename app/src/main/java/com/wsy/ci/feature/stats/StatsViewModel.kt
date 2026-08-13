@@ -6,11 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.designsystem.UNCLASSIFIED_DOMAIN_COLOR_ARGB
 import com.wsy.ci.core.db.LedgerType
+import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.stats.sessionMinuteBuckets
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.core.title.Titles
 import com.wsy.ci.llm.LlmParsed
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -32,6 +34,11 @@ data class TaskRecord(
     val actualMinutes: Int,
     val rewardCi: Long,
     val expGained: Long,
+    /** 任务线信息为快照派生值；空表示该任务未关联任务线。 */
+    val questType: QuestType? = null,
+    val questTitle: String? = null,
+    /** 当前领域头衔；未分类任务没有头衔。 */
+    val currentTitle: String? = null,
 )
 
 /** 明细列表的状态筛选。RUNNING 归到「未完成」，用户视角里它确实还没完成。 */
@@ -56,6 +63,25 @@ enum class RecordFilter(val label: String) {
 sealed interface DomainFilter {
     data object All : DomainFilter
     data class Only(val domainId: Long?) : DomainFilter
+}
+
+/** 任务类型筛选。 */
+sealed interface QuestTypeFilter {
+    data object All : QuestTypeFilter
+    data class Only(val type: QuestType) : QuestTypeFilter
+}
+
+/** 按领域当前头衔筛选；这是当前状态，不是历史快照。 */
+sealed interface TitleFilter {
+    data object All : TitleFilter
+    data class Current(val title: String) : TitleFilter
+}
+
+/** 任务明细里已经添加到状态栏下方的筛选维度。 */
+enum class RecordFilterKind(val label: String) {
+    DOMAIN("领域"),
+    QUEST_TYPE("任务类型"),
+    TITLE("头衔"),
 }
 
 data class StatsData(
@@ -95,6 +121,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     /** 默认落在「已完成」——这个面板的主用途就是回看做完的事。 */
     val recordFilter = MutableStateFlow(RecordFilter.DONE)
     val domainFilter = MutableStateFlow<DomainFilter>(DomainFilter.All)
+    val questTypeFilter = MutableStateFlow<QuestTypeFilter>(QuestTypeFilter.All)
+    val titleFilter = MutableStateFlow<TitleFilter>(TitleFilter.All)
+    val activeRecordFilters = MutableStateFlow<Set<RecordFilterKind>>(emptySet())
     val data = MutableStateFlow<StatsData?>(null)
     val analysis = MutableStateFlow<String?>(null)
     val analyzing = MutableStateFlow(false)
@@ -109,6 +138,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         analysis.value = null
         // 换周期后原来选中的领域可能在新周期里没有任何任务，重置回「全部」免得列表空得莫名其妙
         domainFilter.value = DomainFilter.All
+        questTypeFilter.value = QuestTypeFilter.All
+        titleFilter.value = TitleFilter.All
+        activeRecordFilters.value = emptySet()
         refresh()
     }
 
@@ -116,8 +148,28 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         recordFilter.value = f
     }
 
-    fun setDomainFilter(f: DomainFilter) {
+    fun applyDomainFilter(f: DomainFilter) {
         domainFilter.value = f
+        activeRecordFilters.value += RecordFilterKind.DOMAIN
+    }
+
+    fun applyQuestTypeFilter(f: QuestTypeFilter) {
+        questTypeFilter.value = f
+        activeRecordFilters.value += RecordFilterKind.QUEST_TYPE
+    }
+
+    fun applyTitleFilter(f: TitleFilter) {
+        titleFilter.value = f
+        activeRecordFilters.value += RecordFilterKind.TITLE
+    }
+
+    fun removeRecordFilter(kind: RecordFilterKind) {
+        when (kind) {
+            RecordFilterKind.DOMAIN -> domainFilter.value = DomainFilter.All
+            RecordFilterKind.QUEST_TYPE -> questTypeFilter.value = QuestTypeFilter.All
+            RecordFilterKind.TITLE -> titleFilter.value = TitleFilter.All
+        }
+        activeRecordFilters.value -= kind
     }
 
     fun refresh() {
@@ -139,7 +191,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val tasks = db.taskDao().byRange(fromDay, toDay)
         val ledger = db.ledgerDao()
             .byTimeRange(TimeFormat.dayStartMillis(fromDay), TimeFormat.dayEndMillis(toDay))
-        val domains = db.domainDao().observeAll().first()
+        // 历史专注仍保留已删除领域的 domainId，复盘需读取归档项才能还原领域名称。
+        val domains = db.domainDao().observeEvery().first()
+        val quests = db.questDao().observeEvery().first()
 
         // 与结算、任务卡同一套换算（四舍五入），免得同一次专注在两处显示差一分钟
         val minutesOf = { s: SessionEntity ->
@@ -148,6 +202,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val totalMinutes = sessions.sumOf(minutesOf)
 
         val domainName = domains.associateBy({ it.id }, { it })
+        val currentTitleByDomain = domains.associate { it.id to Titles.currentTitle(it) }
+        val questById = quests.associateBy { it.id }
         val byDomain = sessions.groupBy { it.domainId }
             .map { (id, list) ->
                 val d = id?.let { domainName[it] }
@@ -181,6 +237,9 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                     actualMinutes = own.sumOf(minutesOf),
                     rewardCi = own.sumOf { it.rewardCi },
                     expGained = own.sumOf { it.expGained },
+                    questType = task.questId?.let { questById[it]?.type },
+                    questTitle = task.questId?.let { questById[it]?.title },
+                    currentTitle = task.domainId?.let(currentTitleByDomain::get),
                 )
             }
 

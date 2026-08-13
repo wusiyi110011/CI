@@ -1,8 +1,8 @@
 package com.wsy.ci.feature.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,24 +12,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDifficultyChip
+import com.wsy.ci.core.designsystem.CiDropdownField
+import com.wsy.ci.core.designsystem.CiFormDialog
 import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiStatPanel
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
+import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.util.TimeFormat
 
 /** 明细行内各列宽度，固定住才能跨行对齐。 */
@@ -45,13 +59,35 @@ fun filterRecords(
     records: List<TaskRecord>,
     status: RecordFilter,
     domain: DomainFilter,
+    questType: QuestTypeFilter = QuestTypeFilter.All,
+    title: TitleFilter = TitleFilter.All,
 ): List<TaskRecord> = records.filter { record ->
     val statusOk = status.matches(record.task.status)
     val domainOk = when (domain) {
         DomainFilter.All -> true
         is DomainFilter.Only -> record.task.domainId == domain.domainId
     }
-    statusOk && domainOk
+    val questTypeOk = questType.matches(record.questType)
+    val titleOk = when (title) {
+        TitleFilter.All -> true
+        is TitleFilter.Current -> record.currentTitle == title.title
+    }
+    statusOk && domainOk && questTypeOk && titleOk
+}
+
+fun QuestTypeFilter.matches(type: QuestType?): Boolean = when (this) {
+    QuestTypeFilter.All -> true
+    is QuestTypeFilter.Only -> type == this.type
+}
+
+fun domainMatches(record: TaskRecord, domain: DomainFilter): Boolean = when (domain) {
+    DomainFilter.All -> true
+    is DomainFilter.Only -> record.task.domainId == domain.domainId
+}
+
+fun titleOptions(records: List<TaskRecord>): Set<TitleFilter> = buildSet {
+    add(TitleFilter.All)
+    records.mapNotNull { it.currentTitle }.distinct().forEach { add(TitleFilter.Current(it)) }
 }
 
 /**
@@ -65,30 +101,47 @@ fun TaskRecordsPanel(
     records: List<TaskRecord>,
     statusFilter: RecordFilter,
     domainFilter: DomainFilter,
+    questTypeFilter: QuestTypeFilter = QuestTypeFilter.All,
+    titleFilter: TitleFilter = TitleFilter.All,
+    activeFilters: Set<RecordFilterKind> = emptySet(),
     onStatusFilter: (RecordFilter) -> Unit,
     onDomainFilter: (DomainFilter) -> Unit,
+    onQuestTypeFilter: (QuestTypeFilter) -> Unit = {},
+    onTitleFilter: (TitleFilter) -> Unit = {},
+    onRemoveFilter: (RecordFilterKind) -> Unit = {},
     onRecordClick: (TaskRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val filtered = filterRecords(records, statusFilter, domainFilter)
+    val filtered = filterRecords(records, statusFilter, domainFilter, questTypeFilter, titleFilter)
     val totalMinutes = filtered.sumOf { it.actualMinutes }
     val totalCi = filtered.sumOf { it.rewardCi }
+    var showFilterDialog by remember { mutableStateOf(false) }
 
     CiStatPanel(
         title = "任务明细 · ${filtered.size} 条 · 实际投入 ${TimeFormat.duration(totalMinutes)}" +
             if (totalCi > 0) " · 入账 $totalCi CI" else "",
         modifier = modifier,
     ) {
-        CiSegmentedControl(
-            options = RecordFilter.entries,
-            selected = statusFilter,
-            label = { it.label },
-            onSelect = onStatusFilter,
-        )
-        DomainFilterRow(
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            CiSegmentedControl(
+                options = RecordFilter.entries,
+                selected = statusFilter,
+                label = { it.label },
+                onSelect = onStatusFilter,
+            )
+            FilterIconButton(onClick = { showFilterDialog = true })
+        }
+        ActiveFilterChips(
             records = records,
-            selected = domainFilter,
-            onSelect = onDomainFilter,
+            activeFilters = activeFilters,
+            domain = domainFilter,
+            questType = questTypeFilter,
+            title = titleFilter,
+            onRemove = onRemoveFilter,
         )
 
         if (filtered.isEmpty()) {
@@ -107,65 +160,195 @@ fun TaskRecordsPanel(
             }
         }
     }
+
+    if (showFilterDialog) {
+        AddRecordFilterDialog(
+            records = records,
+            onDomainFilter = onDomainFilter,
+            onQuestTypeFilter = onQuestTypeFilter,
+            onTitleFilter = onTitleFilter,
+            onDismiss = { showFilterDialog = false },
+        )
+    }
 }
 
-/**
- * 领域筛选 chip 行。选项只从当前周期真实出现过的领域里取——
- * 列出一堆点了必然空列表的领域没有意义。横向滚动避免领域多时挤爆。
- */
 @Composable
-private fun DomainFilterRow(
-    records: List<TaskRecord>,
-    selected: DomainFilter,
-    onSelect: (DomainFilter) -> Unit,
-) {
-    val options = records
-        .map { it.task.domainId to it.domainName }
-        .distinct()
-        .sortedBy { it.second }
-    if (options.size <= 1) return
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(top = CiSpacing.xxs),
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+private fun FilterIconButton(onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.semantics { contentDescription = "添加筛选条件" },
     ) {
-        FilterChip(
-            text = "全部领域",
-            selected = selected == DomainFilter.All,
-            onClick = { onSelect(DomainFilter.All) },
-        )
-        options.forEach { (id, name) ->
-            FilterChip(
-                text = name,
-                selected = selected == DomainFilter.Only(id),
-                onClick = { onSelect(DomainFilter.Only(id)) },
+        val color = MaterialTheme.colorScheme.onSurfaceVariant
+        Canvas(modifier = Modifier.size(CiSpacing.lg)) {
+            val funnel = Path().apply {
+                moveTo(size.width * 0.18f, size.height * 0.22f)
+                lineTo(size.width * 0.82f, size.height * 0.22f)
+                lineTo(size.width * 0.58f, size.height * 0.52f)
+                lineTo(size.width * 0.58f, size.height * 0.80f)
+                lineTo(size.width * 0.42f, size.height * 0.72f)
+                lineTo(size.width * 0.42f, size.height * 0.52f)
+                close()
+            }
+            drawPath(funnel, color)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActiveFilterChips(
+    records: List<TaskRecord>,
+    activeFilters: Set<RecordFilterKind>,
+    domain: DomainFilter,
+    questType: QuestTypeFilter,
+    title: TitleFilter,
+    onRemove: (RecordFilterKind) -> Unit,
+) {
+    if (activeFilters.isEmpty()) return
+    val domainNames = records.associate { it.task.domainId to it.domainName }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+    ) {
+        RecordFilterKind.entries.filter { it in activeFilters }.forEach { kind ->
+            val value = when (kind) {
+                RecordFilterKind.DOMAIN -> when (domain) {
+                    DomainFilter.All -> null
+                    is DomainFilter.Only -> domainNames[domain.domainId] ?: "未分类"
+                }
+                RecordFilterKind.QUEST_TYPE -> when (questType) {
+                    QuestTypeFilter.All -> null
+                    is QuestTypeFilter.Only -> if (questType.type == QuestType.MAIN) "主线" else "支线"
+                }
+                RecordFilterKind.TITLE -> when (title) {
+                    TitleFilter.All -> null
+                    is TitleFilter.Current -> title.title
+                }
+            }
+            RemovableFilterChip(
+                text = kind.label + value?.let { "：$it" }.orEmpty(),
+                onRemove = { onRemove(kind) },
             )
         }
     }
 }
 
-/** 可点选的筛选 chip，选中态靠描边区分（配色仍全部来自 ColorScheme）。 */
 @Composable
-private fun FilterChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    CiChip(
-        text = text,
-        container = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+private fun RemovableFilterChip(text: String, onRemove: () -> Unit) {
+    Surface(
+        shape = CiShapes.pill,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = CiSpacing.sm, end = CiSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            Text(text, style = MaterialTheme.typography.labelMedium)
+            Text(
+                text = "×",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .clickable(onClick = onRemove)
+                    .semantics { contentDescription = "移除$text" }
+                    .padding(vertical = CiSpacing.xxs),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddRecordFilterDialog(
+    records: List<TaskRecord>,
+    onDomainFilter: (DomainFilter) -> Unit,
+    onQuestTypeFilter: (QuestTypeFilter) -> Unit,
+    onTitleFilter: (TitleFilter) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var kind by remember { mutableStateOf(RecordFilterKind.DOMAIN) }
+    var valueKey by remember(kind) { mutableStateOf<String?>(null) }
+    val options = remember(records, kind) { filterValueOptions(records, kind) }
+
+    CiFormDialog(
+        title = "添加筛选条件",
+        onDismiss = onDismiss,
+        confirmLabel = "确定",
+        onConfirm = {
+            when (kind) {
+                RecordFilterKind.DOMAIN -> onDomainFilter(
+                    valueKey?.let { key ->
+                        DomainFilter.Only(if (key == NULL_DOMAIN_KEY) null else key.toLong())
+                    } ?: DomainFilter.All
+                )
+                RecordFilterKind.QUEST_TYPE -> onQuestTypeFilter(
+                    valueKey?.let { QuestTypeFilter.Only(QuestType.valueOf(it)) }
+                        ?: QuestTypeFilter.All
+                )
+                RecordFilterKind.TITLE -> onTitleFilter(
+                    valueKey?.let(TitleFilter::Current) ?: TitleFilter.All
+                )
+            }
+            onDismiss()
         },
-        content = if (selected) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        borderColor = if (selected) MaterialTheme.colorScheme.onSurface else null,
-        verticalPadding = 5.dp,
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+        dismissLabel = "取消",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
+            FilterDropdown(
+                value = kind.label,
+                options = RecordFilterKind.entries.map { it.name to it.label },
+                onSelect = { kind = RecordFilterKind.valueOf(it) },
+            )
+            FilterDropdown(
+                value = valueKey?.let { selected -> options.firstOrNull { it.first == selected }?.second }
+                    ?: "全部",
+                options = listOf(ALL_VALUE_KEY to "全部") + options,
+                onSelect = { valueKey = it.takeUnless { key -> key == ALL_VALUE_KEY } },
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilterDropdown(
+    value: String,
+    options: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        CiDropdownField(value = value, onClick = { expanded = true })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (key, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onSelect(key)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+private const val ALL_VALUE_KEY = "__all__"
+private const val NULL_DOMAIN_KEY = "__none__"
+
+/** 第二级下拉框选项只取当前周期真正出现过的值。 */
+private fun filterValueOptions(
+    records: List<TaskRecord>,
+    kind: RecordFilterKind,
+): List<Pair<String, String>> = when (kind) {
+    RecordFilterKind.DOMAIN -> records
+        .map { (it.task.domainId?.toString() ?: NULL_DOMAIN_KEY) to it.domainName }
+        .distinctBy { it.first }
+        .sortedBy { it.second }
+    RecordFilterKind.QUEST_TYPE -> records.mapNotNull { it.questType }.distinct().map { type ->
+        type.name to if (type == QuestType.MAIN) "主线" else "支线"
+    }
+    RecordFilterKind.TITLE -> records.mapNotNull { it.currentTitle }.distinct().sorted().map { it to it }
 }
 
 @Composable
