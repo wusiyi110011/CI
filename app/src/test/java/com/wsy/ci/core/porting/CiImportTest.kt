@@ -105,6 +105,19 @@ class CiImportTest {
 
     @Test
     fun `模板本身包含合法JSON`() {
-        assertTrue(CiImport.parse(CiImport.TEMPLATE) is ImportParseResult.Ok)
+        val result = CiImport.parse(CiImport.TEMPLATE)
+        assertTrue(result is ImportParseResult.Ok)
+        val file = (result as ImportParseResult.Ok).file
+        assertEquals(1, file.quests.size)
+        assertTrue(file.tasks.all { it.quest == file.quests.single().title })
+    }
+
+    @Test
+    fun `任务线标题不能重复`() {
+        val result = CiImport.parse(
+            """{"version":1,"quests":[{"title":"重复"},{"title":"重复"}]}"""
+        )
+        assertTrue(result is ImportParseResult.Err)
+        assertTrue((result as ImportParseResult.Err).errors.any { it.contains("标题不能重复") })
     }
 }

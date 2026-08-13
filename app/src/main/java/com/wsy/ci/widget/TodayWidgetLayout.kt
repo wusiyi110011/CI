@@ -20,6 +20,7 @@ import androidx.glance.appwidget.lazy.items
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.ColumnScope
 import androidx.glance.layout.Row
@@ -28,6 +29,7 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
@@ -110,19 +112,26 @@ private fun ColumnScope.EmptyContent() {
             style = TextStyle(fontSize = 13.sp, color = GlanceTheme.colors.outline),
             modifier = GlanceModifier.padding(top = 6.dp),
         )
-        Text(
-            "打开复利",
-            style = TextStyle(
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = GlanceTheme.colors.onSecondaryContainer,
-            ),
-            modifier = GlanceModifier.padding(top = 12.dp)
-                .cornerRadius(18.dp)
-                .background(GlanceTheme.colors.secondaryContainer)
-                .padding(horizontal = 20.dp, vertical = 9.dp)
+        Spacer(modifier = GlanceModifier.height(6.dp))
+        Box(
+            modifier = GlanceModifier
+                .width(104.dp)
+                .height(36.dp)
+                .cornerRadius(12.dp)
+                .background(GlanceTheme.colors.surfaceVariant)
                 .clickable(actionStartActivity<MainActivity>()),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "打开复利  →",
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                ),
+            )
+        }
     }
 }
 

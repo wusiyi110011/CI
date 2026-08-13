@@ -71,4 +71,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissMessage() {
         message.value = null
     }
+
+    /** 数据备份导入后，从磁盘重读路由和 Key 配置，让设置页无需重启即可同步。 */
+    fun reloadFromStorage() {
+        keyConfigured.value = loadKeyStates()
+        routes.value = loadRoutes()
+    }
 }
