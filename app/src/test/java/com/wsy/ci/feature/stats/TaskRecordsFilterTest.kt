@@ -16,7 +16,6 @@ class TaskRecordsFilterTest {
         questId: Long? = null,
         questType: QuestType? = null,
         questTitle: String? = null,
-        currentTitle: String? = null,
     ) = TaskRecord(
         task = TaskEntity(
             id = id,
@@ -34,7 +33,6 @@ class TaskRecordsFilterTest {
         expGained = 60,
         questType = questType,
         questTitle = questTitle,
-        currentTitle = currentTitle,
     )
 
     private val records = listOf(
@@ -88,18 +86,19 @@ class TaskRecordsFilterTest {
     }
 
     @Test
-    fun `类型与头衔多级筛选按与关系组合`() {
+    fun `主线与领域多级筛选按与关系组合`() {
         val enriched = listOf(
-            record(1, TaskStatus.DONE, 1L, questId = 10L, questType = QuestType.MAIN, questTitle = "主线", currentTitle = "学徒"),
-            record(2, TaskStatus.DONE, 1L, questId = 11L, questType = QuestType.SIDE, questTitle = "支线", currentTitle = "学徒"),
-            record(3, TaskStatus.DONE, 1L, questId = 12L, questType = QuestType.MAIN, questTitle = "另一主线", currentTitle = "熟练"),
+            record(1, TaskStatus.DONE, 1L, questId = 10L, questType = QuestType.MAIN, questTitle = "主线"),
+            record(2, TaskStatus.DONE, 1L, questId = 11L, questType = QuestType.SIDE, questTitle = "支线"),
+            record(3, TaskStatus.DONE, 1L, questId = 12L, questType = QuestType.MAIN, questTitle = "另一主线"),
         )
         val result = filterRecords(
             enriched,
             RecordFilter.DONE,
             DomainFilter.Only(1L),
-            QuestTypeFilter.Only(QuestType.MAIN),
-            TitleFilter.Current("学徒"),
+            QuestFilter.Only(10L),
+            QuestFilter.All,
+            setOf(RecordFilterKind.MAIN),
         )
         assertEquals(listOf(1L), result.map { it.task.id })
     }
@@ -110,7 +109,8 @@ class TaskRecordsFilterTest {
             records,
             RecordFilter.ALL,
             DomainFilter.All,
-            questType = QuestTypeFilter.Only(QuestType.SIDE),
+            main = QuestFilter.Only(10L),
+            activeFilters = setOf(RecordFilterKind.MAIN),
         )
         assertEquals(emptyList<Long>(), result.map { it.task.id })
     }
