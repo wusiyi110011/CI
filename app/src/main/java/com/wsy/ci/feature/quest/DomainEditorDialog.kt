@@ -36,7 +36,7 @@ internal fun DomainEditorDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     CiFormDialog(
-        title = "编辑领域头衔",
+        title = if (initial.id == 0L) "添加领域头衔" else "编辑领域头衔",
         onDismiss = onDismiss,
         confirmLabel = "保存",
         onConfirm = {
