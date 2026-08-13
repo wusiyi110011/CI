@@ -1,5 +1,6 @@
 package com.wsy.ci.feature.settings
 
+import android.net.ConnectivityManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -21,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,10 +38,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDropdownField
 import com.wsy.ci.core.designsystem.CiPanelCard
+import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
@@ -53,13 +58,36 @@ import com.wsy.ci.llm.LlmTaskType
 private val KEY_CARD_HEIGHT: Dp = 180.dp
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel = viewModel(),
+    localModelController: LocalModelController? = null,
+    backupController: DataBackupController? = null,
+) {
+    val localController = localModelController ?: remember { InMemoryLocalModelController() }
+    val dataBackupController = backupController ?: remember { InMemoryBackupController() }
+    val localModel by localController.state.collectAsState()
+    val backupState by dataBackupController.state.collectAsState()
+    val backupBusy = backupState.backingUp ||
+        backupState.importingId != null || backupState.deletingId != null
     val keyConfigured by viewModel.keyConfigured.collectAsState()
     val routes by viewModel.routes.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val message by viewModel.message.collectAsState()
     val testing by viewModel.testing.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    var confirmMetered by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var showBackups by remember { mutableStateOf(false) }
+    var confirmRestoreId by remember { mutableStateOf<String?>(null) }
+    var confirmDeleteBackupId by remember { mutableStateOf<String?>(null) }
+    val requestDownload = {
+        if (context.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered) {
+            confirmMetered = true
+        } else {
+            localController.download(false)
+        }
+    }
 
     LaunchedEffect(message) {
         message?.let {
@@ -67,13 +95,20 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             viewModel.dismissMessage()
         }
     }
+    LaunchedEffect(backupState.message) {
+        if (backupState.message?.startsWith("已导入") == true) viewModel.reloadFromStorage()
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.surface,
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(CiSpacing.lg)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
             CiScreenHeader(title = "设置", subtitle = "API Key 仅存本机 Keystore 加密存储")
@@ -101,13 +136,398 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 )
             }
 
+            LocalModelAndBackupCard(
+                state = localModel,
+                backupState = backupState,
+                onDownload = requestDownload,
+                onPause = localController::pauseDownload,
+                onResume = requestDownload,
+                onCancelDownload = localController::cancelDownload,
+                onDelete = { confirmDelete = true },
+                onStart = localController::startService,
+                onStop = localController::stopService,
+                onTest = localController::testInference,
+                onTestVision = localController::testVision,
+                onCancelInference = localController::cancelInferenceAndStop,
+                onBackup = dataBackupController::createBackup,
+                onOpenImport = {
+                    if (!backupBusy) {
+                        dataBackupController.refresh()
+                        showBackups = true
+                    }
+                },
+            )
+
             RouteTableCard(
                 routes = routes,
+                localInstalled = localModel.installState == LocalModelInstallState.INSTALLED,
                 onSelect = viewModel::setRoute,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
+
         }
     }
+    if (confirmMetered) {
+        AlertDialog(
+            onDismissRequest = { confirmMetered = false },
+            title = { Text("使用计费网络下载？") },
+            text = { Text("模型约 1.39 GB。本次确认只对当前下载任务生效。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmMetered = false
+                    localController.download(true)
+                }) { Text("继续下载") }
+            },
+            dismissButton = { TextButton(onClick = { confirmMetered = false }) { Text("取消") } },
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除本地模型？") },
+            text = { Text("会先停止下载和推理，再删除约 1.39 GB 的模型文件。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    localController.deleteModel()
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("保留") } },
+        )
+    }
+    if (showBackups) {
+        BackupListDialog(
+            state = backupState,
+            onDismiss = { showBackups = false },
+            onRestore = { if (!backupBusy) confirmRestoreId = it },
+            onDelete = { if (!backupBusy) confirmDeleteBackupId = it },
+        )
+    }
+    confirmRestoreId?.let { id ->
+        val item = backupState.entries.firstOrNull { it.id == id }
+        AlertDialog(
+            onDismissRequest = { confirmRestoreId = null },
+            title = { Text("确认导入备份？") },
+            text = {
+                Text(
+                    item?.let { "将导入 ${formatBackupTime(it.createdAtMillis)} 的备份，当前本机数据会被覆盖。" }
+                        ?: "备份不存在或已被删除。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRestoreId = null
+                        showBackups = false
+                        dataBackupController.restoreBackup(id)
+                    },
+                    enabled = item != null,
+                ) { Text("确认导入") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRestoreId = null }) { Text("取消") } },
+        )
+    }
+    confirmDeleteBackupId?.let { id ->
+        val item = backupState.entries.firstOrNull { it.id == id }
+        AlertDialog(
+            onDismissRequest = { confirmDeleteBackupId = null },
+            title = { Text("删除这份备份？") },
+            text = { Text(item?.let { "${formatBackupTime(it.createdAtMillis)} · ${formatBackupSize(it.sizeBytes)}" } ?: "备份不存在或已被删除。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDeleteBackupId = null
+                        dataBackupController.deleteBackup(id)
+                    },
+                    enabled = item != null,
+                ) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteBackupId = null }) { Text("保留") } },
+        )
+    }
+}
+
+/**
+ * 本地模型卡。该卡只依赖 [LocalModelController]，下载器和推理服务可在后续模块中替换。
+ * 安装与服务两套状态分开呈现，避免「已下载但未启动」与「正在推理」混在一起。
+ */
+@Composable
+private fun LocalModelAndBackupCard(
+    state: LocalModelUiState,
+    backupState: DataBackupUiState,
+    onDownload: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDelete: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onTest: () -> Unit,
+    onTestVision: () -> Unit,
+    onCancelInference: () -> Unit,
+    onBackup: () -> Unit,
+    onOpenImport: () -> Unit,
+) {
+    CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Text(state.modelName, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${state.version} · ${state.source} · ${state.sizeLabel}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            StatusChip(
+                label = installStateLabel(state.installState),
+                active = state.installState == LocalModelInstallState.INSTALLED,
+                error = state.installState == LocalModelInstallState.FAILED,
+            )
+        }
+
+        state.errorMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            when (state.installState) {
+                LocalModelInstallState.NOT_INSTALLED -> Button(onClick = onDownload, shape = CiShapes.pill) {
+                    Text("下载")
+                }
+                LocalModelInstallState.WAITING_NETWORK,
+                LocalModelInstallState.QUEUED,
+                LocalModelInstallState.DOWNLOADING -> {
+                    Button(onClick = onPause, shape = CiShapes.pill) { Text("暂停") }
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+                LocalModelInstallState.PAUSED -> {
+                    Button(onClick = onResume, shape = CiShapes.pill) { Text("继续") }
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+                LocalModelInstallState.FAILED -> {
+                    Button(onClick = onDownload, shape = CiShapes.pill) { Text("重试") }
+                    OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除") }
+                }
+                LocalModelInstallState.INSTALLED -> {
+                    OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除模型") }
+                }
+                LocalModelInstallState.VERIFYING -> {
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+            }
+            if (state.installState == LocalModelInstallState.WAITING_NETWORK ||
+                state.installState == LocalModelInstallState.QUEUED ||
+                state.installState == LocalModelInstallState.DOWNLOADING ||
+                state.installState == LocalModelInstallState.VERIFYING ||
+                state.installState == LocalModelInstallState.PAUSED
+            ) {
+                Text(
+                    "${(state.downloadProgress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+            }
+        }
+        if (state.installState == LocalModelInstallState.WAITING_NETWORK ||
+            state.installState == LocalModelInstallState.QUEUED ||
+            state.installState == LocalModelInstallState.DOWNLOADING ||
+            state.installState == LocalModelInstallState.VERIFYING ||
+            state.installState == LocalModelInstallState.PAUSED
+        ) {
+            CiProgressBar(
+                progress = state.downloadProgress,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Text("本地推理服务", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    serviceStateLabel(state.serviceState),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state.serviceState == LocalModelServiceState.INFERENCING) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            StatusChip(
+                label = serviceStateLabel(state.serviceState),
+                active = state.serviceState == LocalModelServiceState.ON,
+                error = false,
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            when (state.serviceState) {
+                LocalModelServiceState.OFF -> Button(
+                    onClick = onStart,
+                    enabled = state.installState == LocalModelInstallState.INSTALLED,
+                    shape = CiShapes.pill,
+                ) { Text("启动") }
+                LocalModelServiceState.STARTING -> OutlinedButton(onClick = onStop, shape = CiShapes.pill) {
+                    Text("取消启动")
+                }
+                LocalModelServiceState.ON -> {
+                    Button(onClick = onTest, shape = CiShapes.pill) { Text("文字测试") }
+                    Button(onClick = onTestVision, shape = CiShapes.pill) { Text("图片测试") }
+                    OutlinedButton(onClick = onStop, shape = CiShapes.pill) { Text("关闭") }
+                }
+                LocalModelServiceState.INFERENCING -> {
+                    Button(onClick = onCancelInference, shape = CiShapes.pill) { Text("确认取消并关闭") }
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        DataBackupSection(
+            state = backupState,
+            onBackup = onBackup,
+            onOpenImport = onOpenImport,
+        )
+    }
+}
+
+@Composable
+private fun StatusChip(label: String, active: Boolean, error: Boolean) {
+    val container = when {
+        error -> MaterialTheme.colorScheme.errorContainer
+        active -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val content = when {
+        error -> MaterialTheme.colorScheme.onErrorContainer
+        active -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    CiChip(text = label, container = container, content = content)
+}
+
+private fun installStateLabel(state: LocalModelInstallState): String = when (state) {
+    LocalModelInstallState.NOT_INSTALLED -> "未安装"
+    LocalModelInstallState.WAITING_NETWORK -> "等待网络"
+    LocalModelInstallState.QUEUED -> "排队"
+    LocalModelInstallState.DOWNLOADING -> "下载中"
+    LocalModelInstallState.PAUSED -> "已暂停"
+    LocalModelInstallState.VERIFYING -> "校验中"
+    LocalModelInstallState.FAILED -> "下载失败"
+    LocalModelInstallState.INSTALLED -> "已安装"
+}
+
+private fun serviceStateLabel(state: LocalModelServiceState): String = when (state) {
+    LocalModelServiceState.OFF -> "已关闭"
+    LocalModelServiceState.STARTING -> "启动中"
+    LocalModelServiceState.ON -> "已开启"
+    LocalModelServiceState.INFERENCING -> "推理中"
+}
+
+@Composable
+private fun DataBackupSection(
+    state: DataBackupUiState,
+    onBackup: () -> Unit,
+    onOpenImport: () -> Unit,
+) {
+    val busy = state.backingUp || state.importingId != null || state.deletingId != null
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                Text("数据备份", style = MaterialTheme.typography.titleSmall)
+                if (state.entries.isNotEmpty()) {
+                    CiChip(
+                        text = "${state.entries.size} 份",
+                        container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        content = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = state.message ?: state.errorMessage
+                    ?: "仅备份学习数据和普通设置，不包含模型与 API Key。",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state.errorMessage == null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            OutlinedButton(onClick = onOpenImport, enabled = !busy, shape = CiShapes.pill) {
+                Text("管理备份")
+            }
+            Button(onClick = onBackup, enabled = !busy, shape = CiShapes.pill) {
+                Text(if (state.backingUp) "备份中…" else "一键备份")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupListDialog(
+    state: DataBackupUiState,
+    onDismiss: () -> Unit,
+    onRestore: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择备份导入") },
+        text = {
+            if (state.entries.isEmpty()) {
+                Text("暂无备份。点击设置页中的「一键备份」创建。")
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(CiSizes.dialogScrollMaxHeight)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    state.entries.forEach { item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(formatBackupTime(item.createdAtMillis), style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${item.label} · ${formatBackupSize(item.sizeBytes)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = { onRestore(item.id) }) { Text("导入") }
+                            TextButton(onClick = { onDelete(item.id) }) { Text("删除") }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
 }
 
 /** 外观卡：明暗三选一。跟随系统之外还能手动钉死，夜里看平板不必去改系统设置。 */
@@ -244,6 +664,7 @@ private fun KeyCard(
 @Composable
 private fun RouteTableCard(
     routes: Map<LlmTaskType, String?>,
+    localInstalled: Boolean,
     onSelect: (LlmTaskType, String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -260,12 +681,13 @@ private fun RouteTableCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        Column {
             LlmTaskType.entries.forEach { task ->
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 RouteRow(
                     task = task,
                     current = routes[task],
+                    localInstalled = localInstalled,
                     onSelect = { onSelect(task, it) },
                 )
             }
@@ -274,12 +696,18 @@ private fun RouteTableCard(
 }
 
 @Composable
-private fun RouteRow(task: LlmTaskType, current: String?, onSelect: (String?) -> Unit) {
+private fun RouteRow(
+    task: LlmTaskType,
+    current: String?,
+    localInstalled: Boolean,
+    onSelect: (String?) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     val defaultLabel = "默认（${LlmEndpoints.defaultFor(task.tier).label}）"
     val currentLabel = when (current) {
         null -> defaultLabel
         LlmSettings.ROUTE_OFF -> "关闭（离线兜底）"
+        LOCAL_MODEL_ROUTE_ID -> if (localInstalled) "本地模型（离线）" else "本地模型（需先下载）"
         else -> LlmEndpoints.byId(current)?.label ?: current
     }
 
@@ -312,6 +740,10 @@ private fun RouteRow(task: LlmTaskType, current: String?, onSelect: (String?) ->
                         onClick = { onSelect(endpoint.id); expanded = false },
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text(if (localInstalled) "本地模型（离线）" else "本地模型（需先下载）") },
+                    onClick = { onSelect(LOCAL_MODEL_ROUTE_ID); expanded = false },
+                )
                 DropdownMenuItem(
                     text = { Text("关闭（离线兜底）") },
                     onClick = { onSelect(LlmSettings.ROUTE_OFF); expanded = false },
