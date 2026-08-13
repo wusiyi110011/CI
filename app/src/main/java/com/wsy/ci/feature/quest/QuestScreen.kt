@@ -46,7 +46,6 @@ import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
-import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.designsystem.CiUnderlineTabs
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.quest.QuestProgress
@@ -115,9 +114,15 @@ fun QuestScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.surface,
         floatingActionButton = {
-            if (tab == QuestTab.MAIN_SIDE) {
+            if (tab == QuestTab.MAIN_SIDE || tab == QuestTab.DOMAIN) {
                 FloatingActionButton(
-                    onClick = { editing = QuestEntity(type = QuestType.SIDE, title = "") },
+                    onClick = {
+                        if (tab == QuestTab.MAIN_SIDE) {
+                            editing = QuestEntity(type = QuestType.SIDE, title = "")
+                        } else {
+                            editingDomain = DomainEntity(name = "")
+                        }
+                    },
                     shape = CiShapes.fab,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -144,17 +149,15 @@ fun QuestScreen(
                     onSelect = { tab = it },
                     modifier = Modifier.weight(1f),
                 )
-                if (tab == QuestTab.MAIN_SIDE) {
-                    Row(
-                        modifier = Modifier.padding(bottom = CiSpacing.xs),
-                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-                    ) {
-                        OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
-                            Text("🤖 AI 生成学习路线", style = MaterialTheme.typography.labelMedium)
-                        }
-                        OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
-                            Text("📥 导入 JSON 计划", style = MaterialTheme.typography.labelMedium)
-                        }
+                Row(
+                    modifier = Modifier.padding(bottom = CiSpacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
+                        Text("🤖 AI 生成学习路线", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                        Text("📥 导入 JSON 计划", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -187,7 +190,6 @@ fun QuestScreen(
                 )
                 QuestTab.DOMAIN -> DomainTitleBoard(
                     domains = domains,
-                    onAddDomain = viewModel::addDomain,
                     onOpenDomain = { openedDomain = it },
                     modifier = Modifier.weight(1f),
                 )
@@ -662,11 +664,9 @@ private fun IconAction(emoji: String, onClick: () -> Unit) {
 @Composable
 private fun DomainTitleBoard(
     domains: List<DomainEntity>,
-    onAddDomain: (String) -> Unit,
     onOpenDomain: (DomainEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var newName by remember { mutableStateOf("") }
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
@@ -674,26 +674,6 @@ private fun DomainTitleBoard(
         SectionLabel("点开任一领域，可以看到挣这条头衔线经验的主线与支线（含已完成的）")
         domains.forEach { domain ->
             DomainCard(domain, onOpen = { onOpenDomain(domain) })
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = CiSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-        ) {
-            CiTextField(
-                value = newName,
-                onValueChange = { newName = it },
-                placeholder = "新领域名（如：深度学习）",
-                modifier = Modifier.width(360.dp),
-            )
-            TextButton(
-                onClick = {
-                    if (newName.isNotBlank()) {
-                        onAddDomain(newName.trim())
-                        newName = ""
-                    }
-                },
-            ) { Text("添加领域") }
         }
     }
 }

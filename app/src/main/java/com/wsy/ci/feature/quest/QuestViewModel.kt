@@ -260,12 +260,14 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                 trimmedName.isBlank() -> message.value = "领域名不能为空"
                 trimmedTitles.size != Economy.MAX_LEVEL -> message.value = "请填写恰好 ${Economy.MAX_LEVEL} 个头衔"
                 trimmedTitles.any { it.isBlank() } -> message.value = "头衔名称不能为空"
-                else -> db.domainDao().update(
-                    domain.copy(
+                else -> {
+                    val updated = domain.copy(
                         name = trimmedName,
                         titlesJson = Titles.encode(trimmedTitles),
                     )
-                )
+                    if (domain.id == 0L) db.domainDao().insert(updated)
+                    else db.domainDao().update(updated)
+                }
             }
         }
     }
