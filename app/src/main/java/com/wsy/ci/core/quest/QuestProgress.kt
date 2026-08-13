@@ -22,8 +22,8 @@ data class QuestProgress(
     /** 计划中（未开始、未跳过）的任务数。 */
     val pending: Int get() = total - done - skipped - running
 
-    /** 完成比例，无任务时为 0。 */
-    val ratio: Float get() = if (total == 0) 0f else done.toFloat() / total
+    /** 已处理比例（完成 + 跳过），无任务时为 0。 */
+    val ratio: Float get() = if (total == 0) 0f else (done + skipped).toFloat() / total
 
     companion object {
         /** 由任务列表算出完成情况；空列表得到全 0。 */

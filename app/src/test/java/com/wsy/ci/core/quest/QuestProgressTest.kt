@@ -45,7 +45,7 @@ class QuestProgressTest {
         assertEquals(1, progress.skipped)
         assertEquals(1, progress.running)
         assertEquals(1, progress.pending)
-        assertEquals(0.4f, progress.ratio, 1e-6f)
+        assertEquals(0.6f, progress.ratio, 1e-6f)
     }
 
     @Test

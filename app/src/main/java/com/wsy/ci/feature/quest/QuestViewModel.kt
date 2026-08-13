@@ -11,6 +11,7 @@ import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.Difficulty
+import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.porting.CiImport
 import com.wsy.ci.core.porting.CiImportFile
 import com.wsy.ci.core.porting.ImportParseResult
@@ -63,6 +64,10 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val domains: StateFlow<List<DomainEntity>> = db.domainDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 全量任务流，主线卡上的任务进度随任务状态变化实时刷新。 */
+    val allTasks: StateFlow<List<TaskEntity>> = db.taskDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 主线超限时保存被拒并给出提示。 */
@@ -236,8 +241,41 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     /** [onCreated] 给任务卡里的「或新建领域」用：建完把新 id 回填进任务再存。 */
     fun addDomain(name: String, onCreated: (Long) -> Unit = {}) {
         viewModelScope.launch {
-            val id = db.domainDao().insert(DomainEntity(name = name))
+            val trimmed = name.trim()
+            if (trimmed.isBlank()) {
+                message.value = "领域名不能为空"
+                return@launch
+            }
+            val id = db.domainDao().insert(DomainEntity(name = trimmed))
             onCreated(id)
+        }
+    }
+
+    /** 编辑领域名与六级头衔；只更新允许编辑的字段，保留经验、颜色和创建时间。 */
+    fun saveDomain(domain: DomainEntity, name: String, titles: List<String>) {
+        viewModelScope.launch {
+            val trimmedName = name.trim()
+            val trimmedTitles = titles.map(String::trim)
+            when {
+                trimmedName.isBlank() -> message.value = "领域名不能为空"
+                trimmedTitles.size != Economy.MAX_LEVEL -> message.value = "请填写恰好 ${Economy.MAX_LEVEL} 个头衔"
+                trimmedTitles.any { it.isBlank() } -> message.value = "头衔名称不能为空"
+                else -> db.domainDao().update(
+                    domain.copy(
+                        name = trimmedName,
+                        titlesJson = Titles.encode(trimmedTitles),
+                    )
+                )
+            }
+        }
+    }
+
+    /** 删除整张领域头衔卡：解除任务线/任务归属后软删除领域，历史记录不动。 */
+    fun deleteDomain(domain: DomainEntity) {
+        viewModelScope.launch {
+            db.domainDao().archiveWithDetach(domain.id)
+            message.value = "已删除领域「${domain.name}」，任务与专注记录仍保留"
+            CiWidgetUpdater.updateAll(getApplication())
         }
     }
 

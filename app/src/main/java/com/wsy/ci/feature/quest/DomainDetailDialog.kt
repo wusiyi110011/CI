@@ -43,6 +43,8 @@ internal fun DomainDetailDialog(
     domain: DomainEntity,
     quests: List<QuestEntity>,
     onOpenQuest: (QuestEntity) -> Unit,
+    onEditDomain: (DomainEntity) -> Unit,
+    onDeleteDomain: (DomainEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val mine = quests.filter { it.domainId == domain.id }
@@ -53,9 +55,11 @@ internal fun DomainDetailDialog(
     CiFormDialog(
         title = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
         onDismiss = onDismiss,
-        confirmLabel = null,
-        onConfirm = null,
+        confirmLabel = "编辑领域",
+        onConfirm = { onEditDomain(domain) },
         dismissLabel = "关闭",
+        destructiveLabel = "删除领域",
+        onDestructive = { onDeleteDomain(domain) },
         width = CiSizes.dialogWideWidth,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
@@ -98,6 +102,31 @@ internal fun DomainDetailDialog(
                 }
             }
         }
+    }
+}
+
+/** 删除领域前的二次确认：软删除卡片，任务与历史记录均保留。 */
+@Composable
+internal fun DeleteDomainDialog(
+    domain: DomainEntity,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    CiFormDialog(
+        title = "删除领域「${domain.name}」？",
+        onDismiss = onDismiss,
+        confirmLabel = null,
+        onConfirm = null,
+        dismissLabel = "取消",
+        destructiveLabel = "确认删除",
+        onDestructive = onConfirm,
+    ) {
+        Text(
+            text = "删除后不可在界面恢复。关联的任务线与具体任务会解除领域归属，" +
+                "但任务、专注记录与 CI 流水都会保留。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

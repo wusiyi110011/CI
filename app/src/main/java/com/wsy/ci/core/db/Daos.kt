@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -11,6 +12,10 @@ import kotlinx.coroutines.flow.Flow
 interface DomainDao {
     @Query("SELECT * FROM domains WHERE archived = 0 ORDER BY createdAt")
     fun observeAll(): Flow<List<DomainEntity>>
+
+    /** 含已归档领域，供复盘还原历史专注当时的领域名称。 */
+    @Query("SELECT * FROM domains ORDER BY createdAt")
+    fun observeEvery(): Flow<List<DomainEntity>>
 
     @Query("SELECT * FROM domains WHERE id = :id")
     suspend fun byId(id: Long): DomainEntity?
@@ -23,6 +28,23 @@ interface DomainDao {
 
     @Query("UPDATE domains SET totalExp = totalExp + :delta WHERE id = :id")
     suspend fun addExp(id: Long, delta: Long)
+
+    /** 软删除领域前先解除任务线与具体任务的归属，保留所有历史记录。 */
+    @Transaction
+    suspend fun archiveWithDetach(id: Long) {
+        detachQuests(id)
+        detachTasks(id)
+        archive(id)
+    }
+
+    @Query("UPDATE quests SET domainId = NULL WHERE domainId = :domainId")
+    suspend fun detachQuests(domainId: Long)
+
+    @Query("UPDATE tasks SET domainId = NULL WHERE domainId = :domainId")
+    suspend fun detachTasks(domainId: Long)
+
+    @Query("UPDATE domains SET archived = 1 WHERE id = :id")
+    suspend fun archive(id: Long)
 }
 
 @Dao
@@ -59,6 +81,9 @@ interface QuestDao {
 
 @Dao
 interface TaskDao {
+    @Query("SELECT * FROM tasks ORDER BY epochDay, startMinute")
+    fun observeAll(): Flow<List<TaskEntity>>
+
     @Query("SELECT * FROM tasks WHERE epochDay = :epochDay ORDER BY startMinute")
     fun observeByDay(epochDay: Long): Flow<List<TaskEntity>>
 
