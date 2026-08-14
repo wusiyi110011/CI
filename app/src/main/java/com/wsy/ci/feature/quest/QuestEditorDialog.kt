@@ -6,12 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
@@ -20,13 +20,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSizes
+import com.wsy.ci.core.designsystem.CiSpacing
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestType
@@ -66,12 +72,16 @@ fun QuestEditorDialog(
                     FilterChip(
                         selected = type == QuestType.MAIN,
                         onClick = { type = QuestType.MAIN },
-                        label = { Text("🗡 主线（大目标，有截止）") },
+                        label = {
+                            QuestTypeLabel(R.drawable.ic_ci_main_quest, "主线（大目标，有截止）")
+                        },
                     )
                     FilterChip(
                         selected = type == QuestType.SIDE,
                         onClick = { type = QuestType.SIDE },
-                        label = { Text("🔁 支线（习惯，吃连击）") },
+                        label = {
+                            QuestTypeLabel(R.drawable.ic_ci_side_quest, "支线（习惯，吃连击）")
+                        },
                     )
                 }
                 CiFormField(
@@ -145,7 +155,15 @@ private fun ParentMainDropdown(
         CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
             label = "归属主线（可选）",
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            trailingIcon = {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_dropdown,
+                    contentDescription = if (expanded) "收起主线" else "展开主线",
+                    modifier = Modifier
+                        .size(CiSizes.compactIcon)
+                        .graphicsLayer { rotationZ = if (expanded) 180f else 0f },
+                )
+            },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
             singleLine = false,
         )
@@ -156,7 +174,7 @@ private fun ParentMainDropdown(
             )
             mains.forEach { main ->
                 DropdownMenuItem(
-                    text = { Text("🗡 ${main.title}") },
+                    text = { QuestTypeLabel(R.drawable.ic_ci_main_quest, main.title) },
                     onClick = { onSelect(main.id); expanded = false },
                 )
             }
@@ -176,7 +194,15 @@ private fun DomainDropdown(
         CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
             label = "关联领域（挣经验升头衔）",
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            trailingIcon = {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_dropdown,
+                    contentDescription = if (expanded) "收起领域" else "展开领域",
+                    modifier = Modifier
+                        .size(CiSizes.compactIcon)
+                        .graphicsLayer { rotationZ = if (expanded) 180f else 0f },
+                )
+            },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
             singleLine = false,
         )
@@ -186,5 +212,20 @@ private fun DomainDropdown(
                 DropdownMenuItem(text = { Text(d.name) }, onClick = { onSelect(d.id); expanded = false })
             }
         }
+    }
+}
+
+@Composable
+private fun QuestTypeLabel(icon: Int, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+    ) {
+        CiFunctionIcon(
+            resourceId = icon,
+            contentDescription = null,
+            modifier = Modifier.size(CiSizes.compactIcon),
+        )
+        Text(text)
     }
 }

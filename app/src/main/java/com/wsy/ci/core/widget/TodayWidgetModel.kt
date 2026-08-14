@@ -143,7 +143,7 @@ object TodayWidgetModel {
             showStartButton = task.status == TaskStatus.PLANNED,
             startEnabled = !timerBusy,
             badgeText = when (task.status) {
-                TaskStatus.DONE -> "✓ 已完成"
+                TaskStatus.DONE -> "已完成"
                 TaskStatus.SKIPPED -> "已跳过"
                 TaskStatus.RUNNING -> "进行中"
                 TaskStatus.PLANNED -> null

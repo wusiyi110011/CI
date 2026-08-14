@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -17,12 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiFormDialog
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
@@ -173,11 +176,25 @@ private fun QuestLinkRow(quest: QuestEntity, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Text(
-            text = questTrailing(quest),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (quest.type == QuestType.SIDE) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_streak,
+                    contentDescription = "连续打卡",
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+            }
+            Text(
+                text = questTrailing(quest),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = if (quest.type == QuestType.SIDE) {
+                    Modifier.padding(start = CiSpacing.xxs)
+                } else {
+                    Modifier
+                },
+            )
+        }
     }
 }
 
@@ -188,7 +205,7 @@ internal fun questStatusLabel(status: QuestStatus): String = when (status) {
 }
 
 private fun questTrailing(quest: QuestEntity): String = when {
-    quest.type == QuestType.SIDE -> "🔥 ${quest.streakDays} 天 · 最佳 ${quest.bestStreak}"
+    quest.type == QuestType.SIDE -> "${quest.streakDays} 天 · 最佳 ${quest.bestStreak}"
     quest.deadlineEpochDay == null -> "无截止日"
     else -> {
         val daysLeft = quest.deadlineEpochDay - LocalDate.now().toEpochDay()

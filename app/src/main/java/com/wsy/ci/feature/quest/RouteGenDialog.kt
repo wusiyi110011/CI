@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
+import com.wsy.ci.core.designsystem.CiFunctionIcon
+import com.wsy.ci.core.designsystem.CiSizes
+import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.RoutePlan
 
@@ -78,7 +83,19 @@ private fun RouteInputDialog(
     AlertDialog(
         shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
-        title = { Text("🤖 AI 生成学习路线") },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_ai_schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
+                Text("AI 生成学习路线")
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 CiFormField(

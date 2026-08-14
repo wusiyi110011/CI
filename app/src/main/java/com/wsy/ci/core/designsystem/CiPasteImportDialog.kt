@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -19,9 +21,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.porting.ImportPreview
 
 /** 粘贴框的最小与常规高度：平板上一屏能看下十来行 JSON。 */
@@ -60,9 +64,21 @@ fun CiPasteImportDialog(
         AlertDialog(
             shape = CiShapes.dialog,
             onDismissRequest = close,
-            title = { Text(if (succeeded) "导入完成" else "导入失败") },
+            title = {
+                ImportDialogTitle(
+                    icon = if (succeeded) R.drawable.ic_ci_complete else R.drawable.ic_ci_warning,
+                    text = if (succeeded) "导入完成" else "导入失败",
+                )
+            },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(result) }
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        result
+                            .removePrefix("✅ ")
+                            .removePrefix("❌ ")
+                            .replace("\n⚠️ ", "\n注意："),
+                    )
+                }
             },
             confirmButton = { TextButton(onClick = close) { Text("知道了") } },
         )
@@ -89,7 +105,7 @@ fun CiPasteImportDialog(
     AlertDialog(
         shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { ImportDialogTitle(R.drawable.ic_ci_import, title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                 Text(
@@ -99,10 +115,20 @@ fun CiPasteImportDialog(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                     TextButton(onClick = { clipboard.setText(AnnotatedString(template)) }) {
-                        Text("📋 复制模板")
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_copy,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text("复制模板", modifier = Modifier.padding(start = CiSpacing.xs))
                     }
                     TextButton(onClick = { text = clipboard.getText()?.text ?: "" }) {
-                        Text("📥 从剪贴板粘贴")
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_paste,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text("从剪贴板粘贴", modifier = Modifier.padding(start = CiSpacing.xs))
                     }
                 }
                 CiFormField(
@@ -152,11 +178,34 @@ private fun ImportPreviewBody(preview: ImportPreview) {
             }
         }
         preview.warnings.forEach { warning ->
-            Text(
-                text = "⚠️ $warning",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_warning,
+                    contentDescription = "警告",
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+                Text(
+                    text = warning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(start = CiSpacing.xs),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ImportDialogTitle(icon: Int, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+    ) {
+        CiFunctionIcon(
+            resourceId = icon,
+            contentDescription = null,
+            modifier = Modifier.size(CiSizes.actionIcon),
+        )
+        Text(text)
     }
 }

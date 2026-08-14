@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -40,8 +41,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wsy.ci.R
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDropdownField
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiScreenHeader
@@ -452,6 +455,11 @@ private fun DataBackupSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
             ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_backup,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
                 Text("数据备份", style = MaterialTheme.typography.titleSmall)
                 if (state.entries.isNotEmpty()) {
                     CiChip(
@@ -626,10 +634,15 @@ private fun KeyCard(
                 PasswordVisualTransformation()
             },
             trailing = {
-                Text(
-                    text = if (revealed) "🙈" else "👁",
-                    style = MaterialTheme.typography.bodyMedium,
+                CiFunctionIcon(
+                    resourceId = if (revealed) {
+                        R.drawable.ic_ci_visibility_off
+                    } else {
+                        R.drawable.ic_ci_visibility_on
+                    },
+                    contentDescription = if (revealed) "隐藏 API Key" else "显示 API Key",
                     modifier = Modifier
+                        .size(CiSizes.actionIcon)
                         .clip(CiShapes.pill)
                         .clickable { revealed = !revealed }
                         .padding(CiSpacing.xxs),
@@ -728,7 +741,11 @@ private fun RouteRow(
             )
         }
         Box {
-            CiDropdownField(value = currentLabel, onClick = { expanded = true })
+            CiDropdownField(
+                value = currentLabel,
+                expanded = expanded,
+                onClick = { expanded = true },
+            )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 DropdownMenuItem(
                     text = { Text(defaultLabel) },

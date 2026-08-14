@@ -79,7 +79,7 @@ fun previewPlan(
             buildString {
                 append("$day $start–$end · ${t.title.trim()}（$difficulty）")
                 t.quest?.trim()?.takeIf { it.isNotBlank() }?.let { append(" → $it") }
-                if (t.locked) append(" 🔒")
+                if (t.locked) append("（已锁定）")
             }
         }
         sections.add(PreviewSection("任务 ${file.tasks.size} 个", lines))

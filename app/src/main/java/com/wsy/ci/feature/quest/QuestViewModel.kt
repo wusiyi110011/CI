@@ -328,7 +328,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                     chaptersJson = Json.encodeToString(plan.chapters),
                 )
             )
-            message.value = "✅ 主线已创建：${plan.chapters.size} 个章节。去今日页安排第一块学习时间吧"
+            message.value = "主线已创建：${plan.chapters.size} 个章节。去今日页安排第一块学习时间吧"
             routeGen.value = RouteGenState.Idle
         }
     }

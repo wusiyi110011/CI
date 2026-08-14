@@ -8,6 +8,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
@@ -37,6 +39,7 @@ import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
 import com.wsy.ci.MainActivity
 import com.wsy.ci.R
+import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.widget.TodayWidgetMode
 import com.wsy.ci.core.widget.TodayWidgetUi
 import com.wsy.ci.core.widget.WidgetTaskRow
@@ -68,13 +71,19 @@ private fun WidgetHeader(headerStat: String?) {
         modifier = GlanceModifier.fillMaxWidth()
             .clickable(actionStartActivity<MainActivity>()),
     ) {
+        Image(
+            provider = ImageProvider(R.drawable.ic_ci_schedule),
+            contentDescription = null,
+            modifier = GlanceModifier.width(20.dp).height(20.dp),
+        )
         Text(
-            "📅 今日日程",
+            "今日日程",
             style = TextStyle(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = GlanceTheme.colors.onSurface,
             ),
+            modifier = GlanceModifier.padding(start = 6.dp),
         )
         Spacer(modifier = GlanceModifier.defaultWeight())
         if (headerStat != null) {
@@ -122,15 +131,26 @@ private fun ColumnScope.EmptyContent() {
                 .clickable(actionStartActivity<MainActivity>()),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "打开复利  →",
-                style = TextStyle(
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                ),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Image(
+                    provider = ImageProvider(R.drawable.ic_ci_open),
+                    contentDescription = null,
+                    modifier = GlanceModifier.width(16.dp).height(16.dp),
+                )
+                Text(
+                    "打开复利",
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    ),
+                    modifier = GlanceModifier.padding(start = 4.dp),
+                )
+            }
         }
     }
 }
@@ -173,18 +193,28 @@ private fun FocusingCard(title: String, timeText: String, startAt: Long) {
             .background(GlanceTheme.colors.primaryContainer)
             .padding(16.dp),
     ) {
-        Text(
-            "🔴 专注中",
-            style = TextStyle(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = GlanceTheme.colors.onErrorContainer,
-            ),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = GlanceModifier
                 .cornerRadius(8.dp)
                 .background(GlanceTheme.colors.errorContainer)
                 .padding(horizontal = 8.dp, vertical = 3.dp),
-        )
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_ci_focus_timer),
+                contentDescription = null,
+                modifier = GlanceModifier.width(14.dp).height(14.dp),
+            )
+            Text(
+                "专注中",
+                style = TextStyle(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GlanceTheme.colors.onErrorContainer,
+                ),
+                modifier = GlanceModifier.padding(start = 4.dp),
+            )
+        }
         Text(
             title,
             maxLines = 1,
@@ -239,20 +269,31 @@ private fun ElapsedChronometer(startAt: Long) {
 @Composable
 private fun StopButton() {
     val armed = isStopArmed(currentState(STOP_ARMED_AT_KEY), System.currentTimeMillis())
-    Text(
-        if (armed) "再点一次确认结束" else "结束专注",
-        style = TextStyle(
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            color = if (armed) GlanceTheme.colors.onErrorContainer else GlanceTheme.colors.onError,
-        ),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = GlanceModifier.fillMaxWidth()
             .cornerRadius(22.dp)
             .background(if (armed) GlanceTheme.colors.errorContainer else GlanceTheme.colors.error)
             .padding(vertical = 12.dp)
             .clickable(actionRunCallback<ConfirmStopAction>()),
-    )
+    ) {
+        Image(
+            provider = ImageProvider(R.drawable.ic_ci_stop),
+            contentDescription = null,
+            modifier = GlanceModifier.width(18.dp).height(18.dp),
+        )
+        Text(
+            if (armed) "再点一次确认结束" else "结束专注",
+            style = TextStyle(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = if (armed) GlanceTheme.colors.onErrorContainer else GlanceTheme.colors.onError,
+            ),
+            modifier = GlanceModifier.padding(start = 6.dp),
+        )
+    }
 }
 
 @Composable
@@ -261,14 +302,25 @@ private fun DoneBanner(summary: String) {
         modifier = GlanceModifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            "🎉 今日安排已全部完成",
-            style = TextStyle(
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = GlanceTheme.colors.onSurface,
-            ),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_ci_complete),
+                contentDescription = null,
+                modifier = GlanceModifier.width(18.dp).height(18.dp),
+            )
+            Text(
+                "今日安排已全部完成",
+                style = TextStyle(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GlanceTheme.colors.onSurface,
+                ),
+                modifier = GlanceModifier.padding(start = 6.dp),
+            )
+        }
         Text(
             summary,
             style = TextStyle(fontSize = 13.sp, color = GlanceTheme.colors.onSurfaceVariant),
@@ -312,7 +364,7 @@ private fun TaskRow(row: WidgetTaskRow) {
         if (row.showStartButton) {
             StartButton(row)
         } else if (row.badgeText != null) {
-            StatusBadge(row.badgeText, row.badgeAccent)
+            StatusBadge(row.badgeText, row.badgeAccent, row.status == TaskStatus.DONE)
         }
     }
 }
@@ -327,17 +379,8 @@ private fun StartButton(row: WidgetTaskRow) {
     } else {
         actionRunCallback<BlockedStartAction>()
     }
-    Text(
-        "开始",
-        style = TextStyle(
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (row.startEnabled) {
-                GlanceTheme.colors.onPrimaryContainer
-            } else {
-                GlanceTheme.colors.onSurfaceVariant
-            },
-        ),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = GlanceModifier
             .cornerRadius(18.dp)
             .background(
@@ -349,11 +392,36 @@ private fun StartButton(row: WidgetTaskRow) {
             )
             .padding(horizontal = 16.dp, vertical = 9.dp)
             .clickable(action),
-    )
+    ) {
+        if (row.startEnabled) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_ci_focus_timer),
+                contentDescription = null,
+                modifier = GlanceModifier.width(16.dp).height(16.dp),
+            )
+        }
+        Text(
+            "开始",
+            style = TextStyle(
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (row.startEnabled) {
+                    GlanceTheme.colors.onPrimaryContainer
+                } else {
+                    GlanceTheme.colors.onSurfaceVariant
+                },
+            ),
+            modifier = if (row.startEnabled) {
+                GlanceModifier.padding(start = 4.dp)
+            } else {
+                GlanceModifier
+            },
+        )
+    }
 }
 
 @Composable
-private fun StatusBadge(text: String, accent: Boolean) {
+private fun StatusBadge(text: String, accent: Boolean, completed: Boolean) {
     if (accent) {
         Text(
             text,
@@ -367,6 +435,22 @@ private fun StatusBadge(text: String, accent: Boolean) {
                 .background(GlanceTheme.colors.tertiaryContainer)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         )
+    } else if (completed) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = GlanceModifier.padding(horizontal = 4.dp),
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_ci_complete),
+                contentDescription = null,
+                modifier = GlanceModifier.width(14.dp).height(14.dp),
+            )
+            Text(
+                text,
+                style = TextStyle(fontSize = 12.sp, color = GlanceTheme.colors.outline),
+                modifier = GlanceModifier.padding(start = 3.dp),
+            )
+        }
     } else {
         Text(
             text,

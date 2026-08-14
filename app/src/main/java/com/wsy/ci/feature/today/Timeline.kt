@@ -1,5 +1,6 @@
 package com.wsy.ci.feature.today
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -40,11 +42,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextStyles
@@ -317,14 +321,20 @@ private fun PlannedBlock(
     val task = segment.task
     val colors = CiTheme.colors.taskBlock(task.status)
     // 跨零点延续过来的那一段只占位：标题在开工的那天已经写过了
-    val lock = if (task.locked && task.status == TaskStatus.PLANNED) "🔒 " else ""
     TaskBlock(
         colors = colors,
         x = x,
         y = y,
         width = width,
         height = height,
-        title = if (segment.isContinuation) "" else lock + task.title,
+        title = if (segment.isContinuation) "" else task.title,
+        leadingIcon = if (
+            !segment.isContinuation && task.locked && task.status == TaskStatus.PLANNED
+        ) {
+            R.drawable.ic_ci_lock
+        } else {
+            null
+        },
         caption = if (segment.isContinuation) {
             ""
         } else {
@@ -365,6 +375,7 @@ private fun TaskBlock(
     height: Dp,
     title: String,
     caption: String,
+    @DrawableRes leadingIcon: Int? = null,
     x: Dp = 0.dp,
     width: Dp? = null,
     modifier: Modifier = Modifier,
@@ -392,14 +403,26 @@ private fun TaskBlock(
             verticalArrangement = Arrangement.Top,
         ) {
             if (title.isNotEmpty()) {
-                Text(
-                    text = title,
-                    style = CiTextStyles.blockTitle,
-                    color = colors.content,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+                ) {
+                    leadingIcon?.let {
+                        CiFunctionIcon(
+                            resourceId = it,
+                            contentDescription = "已锁定",
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                    }
+                    Text(
+                        text = title,
+                        style = CiTextStyles.blockTitle,
+                        color = colors.content,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (colors.strikethrough) TextDecoration.LineThrough else null,
+                    )
+                }
             }
             if (caption.isNotEmpty()) {
                 Text(

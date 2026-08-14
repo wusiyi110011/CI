@@ -1,5 +1,6 @@
 package com.wsy.ci.core.designsystem
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.economy.Rarity
 
@@ -31,6 +33,8 @@ fun CiChip(
     borderColor: Color? = null,
     horizontalPadding: Dp = CiSpacing.sm,
     verticalPadding: Dp = CiSpacing.xxs,
+    @DrawableRes leadingIcon: Int? = null,
+    iconContentDescription: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -46,22 +50,42 @@ fun CiChip(
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = text, style = style, color = content)
+        leadingIcon?.let {
+            CiFunctionIcon(
+                resourceId = it,
+                contentDescription = iconContentDescription,
+                modifier = Modifier.size(CiSizes.compactIcon),
+            )
+        }
+        Text(
+            text = text,
+            style = style,
+            color = content,
+            modifier = if (leadingIcon == null) {
+                Modifier
+            } else {
+                Modifier.padding(start = CiSpacing.xxs)
+            },
+        )
     }
 }
 
-/** CI 币余额 chip：金铜容器色，🪙 + 千分位金额。 */
+/** CI 币余额 chip：星尘图标 + 千分位金额。 */
 @Composable
 fun CiBalanceChip(balance: Long, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .clip(CiShapes.pill)
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
+            .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
     ) {
-        Text("🪙", style = MaterialTheme.typography.bodyLarge)
+        CiFunctionIcon(
+            resourceId = R.drawable.ic_ci_coin,
+            contentDescription = "CI 币",
+            modifier = Modifier.size(CiSizes.balanceIcon),
+        )
         Text(
             text = formatCi(balance),
             style = MaterialTheme.typography.labelLarge.tabularNums(),

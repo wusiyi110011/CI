@@ -61,8 +61,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             settings.setRoute(LlmTaskType.TITLE_GEN, old)
             routes.value = loadRoutes()
             message.value = when (result) {
-                is com.wsy.ci.llm.LlmParsed.Ok -> "✅ ${endpoint.label} 连通正常"
-                is com.wsy.ci.llm.LlmParsed.Err -> "❌ ${endpoint.label}：${result.message}"
+                is com.wsy.ci.llm.LlmParsed.Ok -> "${endpoint.label} 连通正常"
+                is com.wsy.ci.llm.LlmParsed.Err -> "${endpoint.label}：${result.message}"
             }
             testing.value = false
         }

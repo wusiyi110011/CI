@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DailyPickEntity
 import com.wsy.ci.core.db.LedgerEntity
 import com.wsy.ci.core.db.LedgerType
@@ -55,6 +56,7 @@ import com.wsy.ci.core.db.PurchaseEntity
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.designsystem.CiBalanceChip
 import com.wsy.ci.core.designsystem.CiChip
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiPasteImportDialog
 import com.wsy.ci.core.designsystem.CiQualityChip
@@ -142,11 +144,14 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                         editing = ShopItemEntity(name = "", priceCi = 100, rarity = Rarity.COMMON)
                     },
                     shape = CiShapes.fab,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(CiSizes.fab),
                 ) {
-                    Text("＋", style = MaterialTheme.typography.headlineSmall)
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_add,
+                        contentDescription = "新建商品",
+                    )
                 }
             }
         },
@@ -175,10 +180,28 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                     ) {
                         OutlinedButton(onClick = { showAiInput = true }, shape = CiShapes.pill) {
-                            Text("🤖 AI 估价上架", style = MaterialTheme.typography.labelMedium)
+                            CiFunctionIcon(
+                                resourceId = R.drawable.ic_ci_ai_schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
+                            Text(
+                                "AI 估价上架",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(start = CiSpacing.xs),
+                            )
                         }
                         OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
-                            Text("📥 粘贴批量上架", style = MaterialTheme.typography.labelMedium)
+                            CiFunctionIcon(
+                                resourceId = R.drawable.ic_ci_import,
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
+                            Text(
+                                "粘贴批量上架",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(start = CiSpacing.xs),
+                            )
                         }
                     }
                 }
@@ -224,7 +247,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
 
     if (showImport) {
         CiPasteImportDialog(
-            title = "📥 粘贴批量上架",
+            title = "粘贴批量上架",
             hint = "把「复制模板」的内容发给任何 AI（或自己写），列好想要的奖励后粘贴到下面。" +
                 "校验通过后会先列出要上架的商品，确认了才真上架；同名商品会自动跳过。",
             template = ShopImport.TEMPLATE,
@@ -739,6 +762,8 @@ private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
             style = MaterialTheme.typography.labelMedium,
+            leadingIcon = if (purchase.fulfilled) R.drawable.ic_ci_complete else null,
+            iconContentDescription = if (purchase.fulfilled) "已实现" else null,
         )
         if (purchase.fulfilled) {
             TextButton(onClick = onToggle) {
@@ -754,7 +779,16 @@ private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
                 ),
                 contentPadding = PaddingValues(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
             ) {
-                Text("✓ 已实现", style = MaterialTheme.typography.labelMedium)
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_complete,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+                Text(
+                    "已实现",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(start = CiSpacing.xs),
+                )
             }
         }
     }

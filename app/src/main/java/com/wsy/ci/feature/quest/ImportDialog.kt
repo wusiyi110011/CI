@@ -17,7 +17,7 @@ fun ImportDialog(
     onDismiss: () -> Unit,
 ) {
     CiPasteImportDialog(
-        title = "📥 导入 JSON 计划",
+        title = "导入 JSON 计划",
         hint = "把「复制模板」的内容发给任何 AI（或自己写），按格式改好后粘贴到下面。" +
             "校验通过后会先列出要导入的内容，确认了才写进库里。",
         template = CiImport.TEMPLATE,
