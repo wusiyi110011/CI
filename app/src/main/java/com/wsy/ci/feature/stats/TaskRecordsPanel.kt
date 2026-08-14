@@ -1,7 +1,6 @@
 package com.wsy.ci.feature.stats
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,17 +27,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.designsystem.CiDifficultyChip
 import com.wsy.ci.core.designsystem.CiDropdownField
 import com.wsy.ci.core.designsystem.CiFormDialog
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiStatPanel
 import com.wsy.ci.core.designsystem.CiTheme
@@ -175,23 +174,12 @@ fun TaskRecordsPanel(
 
 @Composable
 private fun FilterIconButton(onClick: () -> Unit) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.semantics { contentDescription = "添加筛选条件" },
-    ) {
-        val color = MaterialTheme.colorScheme.onSurfaceVariant
-        Canvas(modifier = Modifier.size(CiSpacing.lg)) {
-            val funnel = Path().apply {
-                moveTo(size.width * 0.18f, size.height * 0.22f)
-                lineTo(size.width * 0.82f, size.height * 0.22f)
-                lineTo(size.width * 0.58f, size.height * 0.52f)
-                lineTo(size.width * 0.58f, size.height * 0.80f)
-                lineTo(size.width * 0.42f, size.height * 0.72f)
-                lineTo(size.width * 0.42f, size.height * 0.52f)
-                close()
-            }
-            drawPath(funnel, color)
-        }
+    IconButton(onClick = onClick) {
+        CiFunctionIcon(
+            resourceId = R.drawable.ic_ci_filter,
+            contentDescription = "添加筛选条件",
+            modifier = Modifier.size(CiSizes.actionIcon),
+        )
     }
 }
 
@@ -242,12 +230,12 @@ private fun RemovableFilterChip(text: String, onRemove: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
         ) {
             Text(text, style = MaterialTheme.typography.labelMedium)
-            Text(
-                text = "×",
-                style = MaterialTheme.typography.titleMedium,
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_close,
+                contentDescription = "移除$text",
                 modifier = Modifier
+                    .size(CiSizes.compactIcon)
                     .clickable(onClick = onRemove)
-                    .semantics { contentDescription = "移除$text" }
                     .padding(vertical = CiSpacing.xxs),
             )
         }
@@ -319,7 +307,11 @@ private fun FilterDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        CiDropdownField(value = value, onClick = { expanded = true })
+        CiDropdownField(
+            value = value,
+            expanded = expanded,
+            onClick = { expanded = true },
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (key, label) ->
                 DropdownMenuItem(

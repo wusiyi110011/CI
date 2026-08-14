@@ -9,3 +9,8 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+.codex/
+.claude/
+.workbuddy
+CLAUDE.md
+AGENTS.md

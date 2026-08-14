@@ -43,6 +43,12 @@ object CiSizes {
     val navRailIcon = 26.dp
     val navRailAiIcon = 34.dp
 
+    /** 手绘功能图标尺寸：源图留白较多，显示框需略大于普通字形。 */
+    val actionIcon = 28.dp
+    val compactIcon = 22.dp
+    val featureIcon = 48.dp
+    val balanceIcon = 42.dp
+
     /** 时间线左侧时刻尺宽度。 */
     val timeRulerWidth = 48.dp
 

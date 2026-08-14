@@ -1,5 +1,6 @@
 package com.wsy.ci.feature.quest
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
@@ -41,6 +43,7 @@ import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiFormDialog
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
@@ -124,11 +127,14 @@ fun QuestScreen(
                         }
                     },
                     shape = CiShapes.fab,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(CiSizes.fab),
                 ) {
-                    Text("＋", style = MaterialTheme.typography.headlineSmall)
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_add,
+                        contentDescription = if (tab == QuestTab.DOMAIN) "新建领域" else "新建任务线",
+                    )
                 }
             }
         },
@@ -154,10 +160,28 @@ fun QuestScreen(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                 ) {
                     OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
-                        Text("🤖 AI 生成学习路线", style = MaterialTheme.typography.labelMedium)
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_ai_schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text(
+                            "AI 生成学习路线",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(start = CiSpacing.xs),
+                        )
                     }
                     OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
-                        Text("📥 导入 JSON 计划", style = MaterialTheme.typography.labelMedium)
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_import,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text(
+                            "导入 JSON 计划",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(start = CiSpacing.xs),
+                        )
                     }
                 }
             }
@@ -474,15 +498,17 @@ private fun QuestCardActions(
     Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
         when (quest.status) {
             QuestStatus.ACTIVE -> {
-                IconAction("✏️") { onEdit(quest) }
-                IconAction("✅") { onComplete(quest) }
-                IconAction("📦") { onArchive(quest) }
+                IconAction(R.drawable.ic_ci_edit, "编辑") { onEdit(quest) }
+                IconAction(R.drawable.ic_ci_complete, "完成") { onComplete(quest) }
+                IconAction(R.drawable.ic_ci_archive, "归档") { onArchive(quest) }
             }
             QuestStatus.DONE -> {
-                IconAction("↩️") { onRestore(quest) }
-                IconAction("📦") { onArchive(quest) }
+                IconAction(R.drawable.ic_ci_restore, "恢复") { onRestore(quest) }
+                IconAction(R.drawable.ic_ci_archive, "归档") { onArchive(quest) }
             }
-            QuestStatus.ARCHIVED -> IconAction("↩️") { onRestore(quest) }
+            QuestStatus.ARCHIVED -> IconAction(R.drawable.ic_ci_restore, "恢复") {
+                onRestore(quest)
+            }
         }
     }
 }
@@ -592,7 +618,7 @@ private fun MainQuestCard(
     }
 }
 
-/** 支线卡：标题 + 🔥连击 chip + 历史最佳。整卡可点，打开任务线详情。 */
+/** 支线卡：标题 + 连击图标 chip + 历史最佳。整卡可点，打开任务线详情。 */
 @Composable
 private fun SideQuestCard(
     quest: QuestEntity,
@@ -628,12 +654,14 @@ private fun SideQuestCard(
             ) {
                 val bonusPercent = (Economy.streakBonus(quest.streakDays) * 100).toInt()
                 CiChip(
-                    text = "🔥 ${quest.streakDays} 天" +
+                    text = "${quest.streakDays} 天" +
                         if (bonusPercent > 0) " +$bonusPercent%" else "",
                     container = MaterialTheme.colorScheme.secondaryContainer,
                     content = MaterialTheme.colorScheme.onSecondaryContainer,
                     style = MaterialTheme.typography.labelMedium,
                     horizontalPadding = 10.dp,
+                    leadingIcon = R.drawable.ic_ci_streak,
+                    iconContentDescription = "连续打卡",
                 )
                 Text(
                     text = "最佳 ${quest.bestStreak} 天",
@@ -653,11 +681,18 @@ private fun statusSuffix(status: QuestStatus): String = when (status) {
 }
 
 @Composable
-private fun IconAction(emoji: String, onClick: () -> Unit) {
-    Text(
-        text = emoji,
-        style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.clickable(onClick = onClick).padding(2.dp),
+private fun IconAction(
+    @DrawableRes icon: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    CiFunctionIcon(
+        resourceId = icon,
+        contentDescription = contentDescription,
+        modifier = Modifier
+            .size(CiSizes.actionIcon)
+            .clickable(onClick = onClick)
+            .padding(2.dp),
     )
 }
 
@@ -696,10 +731,20 @@ private fun DomainCard(domain: DomainEntity, onOpen: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
-                text = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_learning_domain,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
+                Text(
+                    text = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
             Text(
                 text = if (nextExp != null) {
                     "${domain.totalExp} XP · 距下一级还差 $nextExp"

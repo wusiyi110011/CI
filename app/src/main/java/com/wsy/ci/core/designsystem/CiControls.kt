@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -31,6 +33,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 
 /**
  * 分段控件（日/周/月、周/月）：容器为 surfaceContainerHigh 的 pill 组，
@@ -250,10 +253,11 @@ fun CiFormField(
     )
 }
 
-/** 只读的下拉选择器外观（当前值 + ▾），实际展开菜单由调用方接管。 */
+/** 只读的下拉选择器外观（当前值 + 手绘下拉图标），实际展开菜单由调用方接管。 */
 @Composable
 fun CiDropdownField(
     value: String,
+    expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     width: Dp = 240.dp,
@@ -273,10 +277,12 @@ fun CiDropdownField(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Text(
-            text = "▾",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        CiFunctionIcon(
+            resourceId = R.drawable.ic_ci_dropdown,
+            contentDescription = if (expanded) "收起" else "展开",
+            modifier = Modifier
+                .size(CiSizes.compactIcon)
+                .rotate(if (expanded) 180f else 0f),
         )
     }
 }

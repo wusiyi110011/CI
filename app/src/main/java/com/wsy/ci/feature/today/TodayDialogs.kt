@@ -36,12 +36,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.wsy.ci.R
 import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiElevation
 import com.wsy.ci.core.designsystem.CiFormDialog
 import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
@@ -142,8 +144,9 @@ internal fun TaskDetailDialog(
     CiFormDialog(
         title = task.title,
         onDismiss = onDismiss,
-        confirmLabel = if (canStart) "▶ 开始专注" else null,
+        confirmLabel = if (canStart) "开始专注" else null,
         onConfirm = if (canStart) onStart else null,
+        confirmIcon = if (canStart) R.drawable.ic_ci_focus_timer else null,
         dismissLabel = "关闭",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
@@ -263,12 +266,22 @@ internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            text = "🪙 +${settlement.rewardCi} CI",
-            style = MaterialTheme.typography.displaySmall.tabularNums(),
-            color = accent,
-            textAlign = TextAlign.Center,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_coin,
+                contentDescription = "CI 币入账",
+                modifier = Modifier.size(CiSizes.featureIcon),
+            )
+            Text(
+                text = "+${settlement.rewardCi} CI",
+                style = MaterialTheme.typography.displaySmall.tabularNums(),
+                color = accent,
+                textAlign = TextAlign.Center,
+            )
+        }
         Text(
             text = "专注 ${settlement.minutes} 分钟" +
                 durationMultiplierSuffix(settlement.minutes) +
@@ -277,21 +290,41 @@ internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (settlement.checkinRewardCi > 0) {
-            Text(
-                text = "🔥 连续打卡 ${settlement.checkinStreak} 天，" +
-                    "额外 +${settlement.checkinRewardCi} CI",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_streak,
+                    contentDescription = "连续打卡",
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
+                Text(
+                    text = "连续打卡 ${settlement.checkinStreak} 天，" +
+                        "额外 +${settlement.checkinRewardCi} CI",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
         settlement.newLevel?.let { level ->
-            Text(
-                text = "🎉 头衔升至 Lv.$level，奖励 +${settlement.levelUpRewardCi} CI",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_level_up,
+                    contentDescription = "领域升级",
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
+                Text(
+                    text = "头衔升至 Lv.$level，奖励 +${settlement.levelUpRewardCi} CI",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -303,7 +336,19 @@ internal fun NlDialogs(state: TodayViewModel.NlState, viewModel: TodayViewModel)
         is TodayViewModel.NlState.BlockerPreview -> AlertDialog(
             onDismissRequest = viewModel::dismissNl,
             shape = CiShapes.dialog,
-            title = { Text("解析出以下占位时段") },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_blocker,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.actionIcon),
+                    )
+                    Text("解析出以下占位时段")
+                }
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
                     state.blockers.forEach {

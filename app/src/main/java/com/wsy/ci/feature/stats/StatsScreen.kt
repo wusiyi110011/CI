@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -35,11 +36,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wsy.ci.R
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiStatPanel
 import com.wsy.ci.core.designsystem.CiTheme
@@ -145,7 +149,21 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                             enabled = !analyzing,
                             shape = CiShapes.pill,
                         ) {
-                            Text(if (analyzing) "分析中…" else "🤖 AI 深度分析")
+                            if (!analyzing) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_ai_schedule,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                            }
+                            Text(
+                                if (analyzing) "分析中…" else "AI 深度分析",
+                                modifier = if (analyzing) {
+                                    Modifier
+                                } else {
+                                    Modifier.padding(start = CiSpacing.xs)
+                                },
+                            )
                         }
                         TextButton(onClick = viewModel::exportCsv) { Text("导出 CSV 到下载目录") }
                     }

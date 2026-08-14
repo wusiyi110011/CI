@@ -120,7 +120,7 @@ class TodayWidgetModelTest {
         assertTrue(row.dimmed)
         assertTrue(row.strikethrough)
         assertFalse(row.showStartButton)
-        assertEquals("✓ 已完成", row.badgeText)
+        assertEquals("已完成", row.badgeText)
         assertFalse(row.badgeAccent)
     }
 

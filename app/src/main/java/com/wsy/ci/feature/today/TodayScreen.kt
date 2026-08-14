@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
@@ -40,6 +41,7 @@ import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiBalanceChip
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDifficultyChip
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiLegendDot
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiScreenHeader
@@ -151,14 +153,17 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                 )
             },
             shape = CiShapes.fab,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(CiSpacing.lg)
                 .size(CiSizes.fab),
         ) {
-            Text("＋", style = MaterialTheme.typography.headlineSmall)
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_add,
+                contentDescription = "新建任务",
+            )
         }
     }
 
@@ -299,7 +304,16 @@ private fun RunningCard(
                     vertical = 14.dp,
                 ),
             ) {
-                Text("结束", style = MaterialTheme.typography.labelLarge)
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_stop,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+                Text(
+                    "结束",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(start = CiSpacing.xs),
+                )
             }
         }
     }
@@ -366,7 +380,16 @@ private fun IdleFocusCard(onStart: () -> Unit) {
                     vertical = 14.dp,
                 ),
             ) {
-                Text("▶ 自由专注", style = MaterialTheme.typography.labelLarge)
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_focus_timer,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+                Text(
+                    "自由专注",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(start = CiSpacing.xs),
+                )
             }
         }
     }
@@ -400,9 +423,17 @@ private fun NlAdjustRow(loading: Boolean, onSubmit: (String) -> Unit) {
                 vertical = CiSpacing.sm,
             ),
         ) {
+            if (!loading) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_ai_schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(CiSizes.compactIcon),
+                )
+            }
             Text(
-                text = if (loading) "解析中…" else "✨ AI 重排",
+                text = if (loading) "解析中…" else "AI 重排",
                 style = MaterialTheme.typography.labelLarge,
+                modifier = if (loading) Modifier else Modifier.padding(start = CiSpacing.xs),
             )
         }
     }

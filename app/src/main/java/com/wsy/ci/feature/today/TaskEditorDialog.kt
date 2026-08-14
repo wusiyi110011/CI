@@ -6,13 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
@@ -23,6 +23,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material3.MaterialTheme
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiFormField
+import com.wsy.ci.core.designsystem.CiFunctionIcon
+import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.CiShapes
@@ -31,7 +33,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.TaskEntity
@@ -133,7 +138,21 @@ fun TaskEditorDialog(
                 FilterChip(
                     selected = locked,
                     onClick = { locked = !locked },
-                    label = { Text(if (locked) "🔒 已锁定（重排不移动）" else "未锁定") },
+                    label = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+                        ) {
+                            if (locked) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_lock,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                            }
+                            Text(if (locked) "已锁定（重排不移动）" else "未锁定")
+                        }
+                    },
                 )
                 CiFormField(
                     value = note, onValueChange = { note = it },
@@ -194,7 +213,15 @@ private fun DomainPicker(
         CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
             label = "领域",
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            trailingIcon = {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_dropdown,
+                    contentDescription = if (expanded) "收起领域" else "展开领域",
+                    modifier = Modifier
+                        .size(CiSizes.compactIcon)
+                        .graphicsLayer { rotationZ = if (expanded) 180f else 0f },
+                )
+            },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
             singleLine = false,
         )
@@ -225,7 +252,15 @@ private fun QuestPicker(
         CiFormField(
             value = selectedName, onValueChange = {}, readOnly = true,
             label = "主线/支线",
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            trailingIcon = {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_dropdown,
+                    contentDescription = if (expanded) "收起任务线" else "展开任务线",
+                    modifier = Modifier
+                        .size(CiSizes.compactIcon)
+                        .graphicsLayer { rotationZ = if (expanded) 180f else 0f },
+                )
+            },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
             singleLine = false,
         )
@@ -236,7 +271,23 @@ private fun QuestPicker(
             )
             quests.forEach { q ->
                 DropdownMenuItem(
-                    text = { Text("${if (q.type == com.wsy.ci.core.db.QuestType.MAIN) "🗡" else "🔁"} ${q.title}") },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            CiFunctionIcon(
+                                resourceId = if (q.type == com.wsy.ci.core.db.QuestType.MAIN) {
+                                    R.drawable.ic_ci_main_quest
+                                } else {
+                                    R.drawable.ic_ci_side_quest
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
+                            Text(q.title)
+                        }
+                    },
                     onClick = { onSelect(q.id); expanded = false },
                 )
             }

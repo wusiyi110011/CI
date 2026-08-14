@@ -94,7 +94,7 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
             message.value = if (purchase.fulfilled) {
                 "「${purchase.itemName}」已改回未实现"
             } else {
-                "✅ 「${purchase.itemName}」已标记为实现"
+                "「${purchase.itemName}」已标记为实现"
             }
         }
     }
@@ -103,7 +103,7 @@ class ShopViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (val result = repo.purchase(itemId, pickId)) {
                 is PurchaseResult.Success ->
-                    message.value = "🎉 已兑换「${result.item.name}」，花费 ${result.paid} CI"
+                    message.value = "已兑换「${result.item.name}」，花费 ${result.paid} CI"
                 is PurchaseResult.NotEnough ->
                     message.value = "余额不足：需要 ${result.price} CI，当前 ${result.balance} CI"
                 PurchaseResult.NotFound ->

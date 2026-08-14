@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wsy.ci.R
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
@@ -33,6 +34,7 @@ import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDifficultyChip
 import com.wsy.ci.core.designsystem.CiFormDialog
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
@@ -79,6 +81,7 @@ internal fun QuestDetailDialog(
         onDismiss = onDismiss,
         confirmLabel = if (quest.status == QuestStatus.ACTIVE) "编辑任务线" else null,
         onConfirm = if (quest.status == QuestStatus.ACTIVE) onEditQuest else null,
+        confirmIcon = if (quest.status == QuestStatus.ACTIVE) R.drawable.ic_ci_edit else null,
         dismissLabel = "关闭",
         // 已完成/归档的线更需要能删，所以不分状态都给
         destructiveLabel = "删除",
@@ -170,9 +173,11 @@ private fun QuestHeadline(
             )
             parentMainTitle?.let {
                 CiChip(
-                    text = "🗡 归属主线：$it",
+                    text = "归属主线：$it",
                     container = MaterialTheme.colorScheme.secondaryContainer,
                     content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    leadingIcon = R.drawable.ic_ci_main_quest,
+                    iconContentDescription = "主线",
                 )
             }
             quest.deadlineEpochDay?.let { deadline ->
@@ -236,13 +241,21 @@ private fun StartQuestButton(quest: QuestEntity, isTimerRunning: Boolean, onStar
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
+        if (!isTimerRunning) {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_focus_timer,
+                contentDescription = null,
+                modifier = Modifier.size(CiSizes.compactIcon),
+            )
+        }
         Text(
             text = if (quest.type == QuestType.SIDE) {
-                "▶ 开始打卡（自动记为本支线的一个任务）"
+                "开始打卡（自动记为本支线的一个任务）"
             } else {
-                "▶ 开始专注这条主线（不挂具体任务）"
+                "开始专注这条主线（不挂具体任务）"
             },
             style = MaterialTheme.typography.labelLarge,
+            modifier = if (isTimerRunning) Modifier else Modifier.padding(start = CiSpacing.xs),
         )
     }
 }
@@ -331,7 +344,11 @@ private fun TaskRow(
         )
         CiDifficultyChip(task.difficulty)
         if (canStart) {
-            RowAction(text = "▶ 开始", onClick = onStart)
+            RowAction(
+                text = "开始",
+                icon = R.drawable.ic_ci_focus_timer,
+                onClick = onStart,
+            )
             RowAction(text = "跳过", onClick = onSkip)
         } else {
             Text(
@@ -344,16 +361,28 @@ private fun TaskRow(
 }
 
 @Composable
-private fun RowAction(text: String, onClick: () -> Unit) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
+private fun RowAction(text: String, icon: Int? = null, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(CiShapes.pill)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
+    ) {
+        icon?.let {
+            CiFunctionIcon(
+                resourceId = it,
+                contentDescription = null,
+                modifier = Modifier.size(CiSizes.compactIcon),
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = if (icon == null) Modifier else Modifier.padding(start = CiSpacing.xxs),
+        )
+    }
 }
 
 /** 章节存的是 LLM/导入写进来的 JSON，解析失败按「没有章节」处理，不让详情页崩掉。 */

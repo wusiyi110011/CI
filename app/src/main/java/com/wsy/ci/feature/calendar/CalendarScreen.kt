@@ -1,6 +1,7 @@
 package com.wsy.ci.feature.calendar
 
 import android.app.Application
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,11 +47,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.CiApp
+import com.wsy.ci.R
 import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiScreenHeader
@@ -223,7 +226,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                 ) {
-                    StepButton("◀") {
+                    StepButton(R.drawable.ic_ci_previous, "上一时段") {
                         when (mode) {
                             CalendarMode.DAY -> viewModel.shift(-1)
                             CalendarMode.WEEK -> viewModel.shift(-7)
@@ -233,7 +236,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                     TextButton(onClick = viewModel::today) {
                         Text("回到今天", style = MaterialTheme.typography.labelMedium)
                     }
-                    StepButton("▶") {
+                    StepButton(R.drawable.ic_ci_next, "下一时段") {
                         when (mode) {
                             CalendarMode.DAY -> viewModel.shift(1)
                             CalendarMode.WEEK -> viewModel.shift(7)
@@ -285,14 +288,17 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             FloatingActionButton(
                 onClick = { editing = newTaskDraft(selectedDay) },
                 shape = CiShapes.fab,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(CiSpacing.lg)
                     .size(CiSizes.fab),
             ) {
-                Text("＋", style = MaterialTheme.typography.headlineSmall)
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_add,
+                    contentDescription = "新建任务",
+                )
             }
         }
     }
@@ -347,15 +353,19 @@ private fun nowMinuteIfToday(selectedDay: Long): Int? {
 }
 
 @Composable
-private fun StepButton(glyph: String, onClick: () -> Unit) {
-    Text(
-        text = glyph,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun StepButton(
+    @DrawableRes icon: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    CiFunctionIcon(
+        resourceId = icon,
+        contentDescription = contentDescription,
         modifier = Modifier
+            .size(CiSizes.actionIcon)
             .clip(CiShapes.pill)
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(CiSpacing.xxs),
     )
 }
 

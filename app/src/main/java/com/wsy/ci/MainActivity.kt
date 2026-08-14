@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTheme
@@ -56,12 +57,12 @@ private enum class Destination(
     val label: String,
     @param:DrawableRes val icon: Int,
 ) {
-    TODAY("今日", R.drawable.ic_nav_today),
-    CALENDAR("日程", R.drawable.ic_nav_schedule),
-    QUEST("任务", R.drawable.ic_nav_quest),
-    SHOP("商城", R.drawable.ic_nav_shop),
-    STATS("复盘", R.drawable.ic_nav_stats),
-    SETTINGS("设置", R.drawable.ic_nav_settings),
+    TODAY("今日", R.drawable.ic_ci_today),
+    CALENDAR("日程", R.drawable.ic_ci_schedule),
+    QUEST("任务", R.drawable.ic_ci_quest),
+    SHOP("商城", R.drawable.ic_ci_shop),
+    STATS("复盘", R.drawable.ic_ci_stats),
+    SETTINGS("设置", R.drawable.ic_ci_settings),
 }
 
 class MainActivity : ComponentActivity() {
@@ -262,8 +263,8 @@ private fun NavRailItem(destination: Destination, isSelected: Boolean, onClick: 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Image(
-            painter = painterResource(destination.icon),
+        CiFunctionIcon(
+            resourceId = destination.icon,
             contentDescription = null,
             modifier = Modifier.size(CiSizes.navRailIcon),
         )

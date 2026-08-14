@@ -1,10 +1,12 @@
 package com.wsy.ci.core.designsystem
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +36,7 @@ fun CiFormDialog(
     dismissLabel: String = "取消",
     destructiveLabel: String? = null,
     onDestructive: (() -> Unit)? = null,
+    @DrawableRes confirmIcon: Int? = null,
     width: Dp = CiSizes.dialogFormWidth,
     content: @Composable () -> Unit,
 ) {
@@ -64,7 +67,23 @@ fun CiFormDialog(
                         ) { Text(destructiveLabel) }
                     }
                     if (confirmLabel != null && onConfirm != null) {
-                        Button(onClick = onConfirm, shape = CiShapes.pill) { Text(confirmLabel) }
+                        Button(onClick = onConfirm, shape = CiShapes.pill) {
+                            confirmIcon?.let {
+                                CiFunctionIcon(
+                                    resourceId = it,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                            }
+                            Text(
+                                confirmLabel,
+                                modifier = if (confirmIcon == null) {
+                                    Modifier
+                                } else {
+                                    Modifier.padding(start = CiSpacing.xs)
+                                },
+                            )
+                        }
                     }
                 }
             }
