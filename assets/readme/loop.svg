@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="400" viewBox="0 0 1200 400"
+     role="img" aria-labelledby="title desc">
+  <title id="title">一天的复利循环</title>
+  <desc id="desc">排程、专注、结算、兑换、复盘五个阶段首尾相接，复盘数据反哺下一天的排程。</desc>
+
+  <rect width="1200" height="400" rx="26" fill="#F8F4EA"/>
+  <rect x="1.5" y="1.5" width="1197" height="397" rx="24.5" fill="none" stroke="#D4CAB7" stroke-width="2"/>
+
+  <!-- return loop: review feeds tomorrow's schedule -->
+  <path d="M 1066 258 L 1066 316 L 134 316 L 134 268"
+        fill="none" stroke="#B18449" stroke-width="3" stroke-dasharray="3 9" stroke-linecap="round"/>
+  <path d="M 126 274 L 134 258 L 142 274" fill="none" stroke="#B18449" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="600" y="306" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif"
+        font-size="18" fill="#7A5A2B">复盘洞察反哺下一天 · 雪球越滚越大</text>
+
+  <!-- connector chevrons -->
+  <g fill="none" stroke="#8B8B7D" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 232 150 L 248 164 L 232 178"/>
+    <path d="M 465 150 L 481 164 L 465 178"/>
+    <path d="M 698 150 L 714 164 L 698 178"/>
+    <path d="M 931 150 L 947 164 L 931 178"/>
+  </g>
+
+  <!-- stage cards -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+
+    <g transform="translate(41 70)">
+      <rect width="186" height="188" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <circle cx="36" cy="36" r="17" fill="#E8ECE2" stroke="#6A7B61" stroke-width="2"/>
+      <text x="36" y="42" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" font-weight="700" fill="#4A5844">1</text>
+      <text x="20" y="92" font-size="24" font-weight="700" fill="#31332C">排程</text>
+      <text x="20" y="126" font-size="18" fill="#606257">确定性算法</text>
+      <text x="20" y="152" font-size="18" fill="#606257">日窗口 7–23 点</text>
+    </g>
+
+    <g transform="translate(274 70)">
+      <rect width="186" height="188" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <circle cx="36" cy="36" r="17" fill="#DCE7E4" stroke="#6C8584" stroke-width="2"/>
+      <text x="36" y="42" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" font-weight="700" fill="#42585A">2</text>
+      <text x="20" y="92" font-size="24" font-weight="700" fill="#31332C">专注</text>
+      <text x="20" y="126" font-size="18" fill="#606257">前台服务计时</text>
+      <text x="20" y="152" font-size="18" fill="#606257">小组件一键操作</text>
+    </g>
+
+    <g transform="translate(507 70)">
+      <rect width="186" height="188" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <circle cx="36" cy="36" r="17" fill="#F2E3C4" stroke="#B18449" stroke-width="2"/>
+      <text x="36" y="42" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" font-weight="700" fill="#7A5A2B">3</text>
+      <text x="20" y="92" font-size="24" font-weight="700" fill="#31332C">结算</text>
+      <text x="20" y="126" font-size="18" fill="#606257">CI 币时长阶梯</text>
+      <text x="20" y="152" font-size="18" fill="#606257">×1 → ×1.5 → ×2</text>
+    </g>
+
+    <g transform="translate(740 70)">
+      <rect width="186" height="188" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <circle cx="36" cy="36" r="17" fill="#F4DDD7" stroke="#AD6150" stroke-width="2"/>
+      <text x="36" y="42" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" font-weight="700" fill="#7A3B2E">4</text>
+      <text x="20" y="92" font-size="24" font-weight="700" fill="#31332C">兑换</text>
+      <text x="20" y="126" font-size="18" fill="#606257">商城 1元≈20CI</text>
+      <text x="20" y="152" font-size="18" fill="#606257">头衔 · 连击加成</text>
+    </g>
+
+    <g transform="translate(973 70)">
+      <rect width="186" height="188" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <circle cx="36" cy="36" r="17" fill="#E5DDCB" stroke="#31332C" stroke-width="2"/>
+      <text x="36" y="42" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="17" font-weight="700" fill="#31332C">5</text>
+      <text x="20" y="92" font-size="24" font-weight="700" fill="#31332C">复盘</text>
+      <text x="20" y="126" font-size="18" fill="#606257">热力图 · 偏差</text>
+      <text x="20" y="152" font-size="18" fill="#606257">CSV 导出</text>
+    </g>
+  </g>
+</svg>

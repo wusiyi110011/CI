@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="600" viewBox="0 0 1200 600"
+     role="img" aria-labelledby="title desc">
+  <title id="title">技术架构</title>
+  <desc id="desc">自上而下五层：Compose 界面、MVVM 状态、Room 数据、纯 Kotlin 核心算法、LLM 网关（云端与本地 MNN）。</desc>
+
+  <rect width="1200" height="600" rx="26" fill="#F8F4EA"/>
+  <rect x="1.5" y="1.5" width="1197" height="597" rx="24.5" fill="none" stroke="#D4CAB7" stroke-width="2"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+
+    <!-- inter-layer arrows -->
+    <g stroke="#8B8B7D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M 600 148 L 600 164 M 592 156 L 600 166 L 608 156"/>
+      <path d="M 600 236 L 600 252 M 592 244 L 600 254 L 608 244"/>
+      <path d="M 600 324 L 600 340 M 592 332 L 600 342 L 608 332"/>
+      <path d="M 600 424 L 600 440 M 592 432 L 600 442 L 608 432"/>
+    </g>
+
+    <!-- Layer 1: UI -->
+    <g transform="translate(64 48)">
+      <rect width="1072" height="92" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <text x="24" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" letter-spacing="3" fill="#6A7B61">UI</text>
+      <text x="24" y="66" font-size="18" font-weight="600" fill="#31332C">界面层</text>
+      <g font-size="18" fill="#31332C">
+        <g transform="translate(120 18)">
+          <rect width="560" height="56" rx="14" fill="#E8ECE2"/>
+          <text x="280" y="25" text-anchor="middle" font-size="16.5" fill="#4A5844">Jetpack Compose · Material 3</text>
+          <text x="280" y="46" text-anchor="middle" font-size="17" fill="#31332C">今日 · 日程 · 任务 · 商城 · 复盘 · 设置</text>
+        </g>
+        <g transform="translate(700 18)">
+          <rect width="170" height="56" rx="14" fill="#DCE7E4"/>
+          <text x="85" y="25" text-anchor="middle" font-size="16.5" fill="#42585A">Glance 小组件</text>
+          <text x="85" y="46" text-anchor="middle" font-size="17" fill="#31332C">时间线 · 计时</text>
+        </g>
+        <g transform="translate(890 18)">
+          <rect width="158" height="56" rx="14" fill="#DCE7E4"/>
+          <text x="79" y="25" text-anchor="middle" font-size="16.5" fill="#42585A">离线语音输入</text>
+          <text x="79" y="46" text-anchor="middle" font-size="17" fill="#31332C">SenseVoice</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- Layer 2: state -->
+    <g transform="translate(64 172)">
+      <rect width="1072" height="56" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <text x="24" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" letter-spacing="3" fill="#6A7B61">STATE</text>
+      <text x="24" y="44" font-size="18" font-weight="600" fill="#31332C">状态层</text>
+      <text x="120" y="36" font-size="18" fill="#31332C">ViewModel · StateFlow · Repository · 手工 DI</text>
+      <text x="640" y="36" font-size="17" fill="#606257">TimerService 前台计时 ｜ WorkManager 每日刷新</text>
+    </g>
+
+    <!-- Layer 3: data -->
+    <g transform="translate(64 260)">
+      <rect width="1072" height="56" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <text x="24" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" letter-spacing="3" fill="#6A7B61">DATA</text>
+      <text x="24" y="44" font-size="18" font-weight="600" fill="#31332C">数据层</text>
+      <text x="120" y="36" font-size="18" fill="#31332C">Room + SQLite · 9 张表 · 数据库版本 5 · 备份与 CSV 导出</text>
+    </g>
+
+    <!-- Layer 4: core -->
+    <g transform="translate(64 348)">
+      <rect width="1072" height="68" rx="18" fill="#FCFAF2" stroke="#B18449" stroke-width="2.5"/>
+      <text x="24" y="26" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" letter-spacing="3" fill="#B18449">CORE</text>
+      <text x="24" y="48" font-size="18" font-weight="600" fill="#31332C">核心算法</text>
+      <g transform="translate(140 12)">
+        <rect width="400" height="44" rx="12" fill="#F2E3C4"/>
+        <text x="200" y="28" text-anchor="middle" font-size="17.5" fill="#7A5A2B">Scheduler 确定性排程 · 冲突才移动</text>
+      </g>
+      <g transform="translate(560 12)">
+        <rect width="320" height="44" rx="12" fill="#F2E3C4"/>
+        <text x="160" y="28" text-anchor="middle" font-size="17.5" fill="#7A5A2B">Economy 结算 · CI 币 / 经验</text>
+      </g>
+      <text x="1052" y="40" text-anchor="end" font-size="16.5" font-weight="600" fill="#AD6150">纯 Kotlin · 零网络依赖</text>
+    </g>
+
+    <!-- Layer 5: LLM -->
+    <g transform="translate(64 448)">
+      <rect width="1072" height="104" rx="18" fill="#FCFAF2" stroke="#D4CAB7" stroke-width="2"/>
+      <text x="24" y="28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="16" letter-spacing="3" fill="#6C8584">LLM</text>
+      <text x="24" y="52" font-size="18" font-weight="600" fill="#31332C">模型网关</text>
+      <text x="24" y="76" font-size="16" fill="#606257">按任务路由</text>
+      <g transform="translate(150 16)">
+        <rect width="440" height="72" rx="14" fill="#DCE7E4"/>
+        <text x="220" y="28" text-anchor="middle" font-size="17" font-weight="600" fill="#42585A">云端 · OpenAI 兼容 (OkHttp)</text>
+        <text x="220" y="52" text-anchor="middle" font-size="16.5" fill="#31332C">DeepSeek V4 Pro / Flash · MiMo 视觉</text>
+      </g>
+      <g transform="translate(610 16)">
+        <rect width="440" height="72" rx="14" fill="#E5DDCB"/>
+        <text x="220" y="28" text-anchor="middle" font-size="17" font-weight="600" fill="#5C5340">本地 · MNN JNI · arm64-v8a</text>
+        <text x="220" y="52" text-anchor="middle" font-size="16.5" fill="#31332C">Qwen3.5-2B · 文本生成 + 图片理解</text>
+      </g>
+    </g>
+  </g>
+</svg>

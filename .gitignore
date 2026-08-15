@@ -8,6 +8,7 @@ local.properties
 *.aab
 .kotlin/
 captures/
+app-captures/
 .externalNativeBuild/
 .cxx/
 .codex/
