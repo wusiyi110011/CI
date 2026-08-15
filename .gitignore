@@ -18,8 +18,11 @@ app-captures/
 generated-images/
 UI/
 icon/
+intro/
+docs/
 CLAUDE.md
 AGENTS.md
 task_plan.md
 findings.md
 progress.md
+intro-v2/
