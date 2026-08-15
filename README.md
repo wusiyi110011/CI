@@ -203,11 +203,6 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest \
 │   └── work/                 # WorkManager 后台任务
 ├── app/src/test/              # JVM 单元测试
 ├── native/mnn/                # MNN JNI 构建脚本和 C++ 桥接代码
-├── docs/
-│   ├── 项目文档.md             # 当前代码状态与维护说明
-│   ├── 产品与技术方案.md       # 产品方案与开发路线图
-│   └── 本地模型实现与验收.md    # 本地模型构建、下载和验收记录
-├── icon/                      # 应用图标源图与生成脚本
 └── THIRD_PARTY_NOTICES.md     # 第三方组件与模型许可说明
 ```
 
@@ -220,8 +215,6 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest \
 - 当前仅提供 `arm64-v8a` 原生库，不支持其他 ABI；
 - 目前没有 instrumented 测试，真机 UI 和系统行为需要手动验收；
 - 应用尚未发布到 Google Play 或其他应用商店。
-
-更完整的当前实现说明请阅读 [`docs/项目文档.md`](docs/项目文档.md)，产品层面的设计和路线图请阅读 [`docs/产品与技术方案.md`](docs/产品与技术方案.md)。
 
 ## 许可与第三方声明
 
