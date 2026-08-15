@@ -44,6 +44,24 @@ class LocalModelDownloadWorker(
             val finalDir = File(manager.rootDirectory, "revisions/${spec.manifest.revision}")
             try {
                 manager.rootDirectory.mkdirs()
+
+                // 归档类模型解压耗时较长，很容易在一次执行窗口内跑不完被系统打断；重试时
+                // 不能无脑清空 finalDir 从头再下载一遍，先看看上次的进度能不能直接接上。
+                if (spec.archiveFilePath != null && finalDir.isDirectory) {
+                    if (ARCHIVE_ENTRY_WHITELIST.all { File(finalDir, it).isFile }) {
+                        manager.markRunning()
+                        return@withContext finishArchive(spec, finalDir)
+                    }
+                    val archiveFile = File(finalDir, spec.archiveFilePath)
+                    val archiveManifest = spec.manifest.file(spec.archiveFilePath)
+                    if (archiveManifest != null &&
+                        LocalModelVerifier.verify(archiveFile, archiveManifest.size, archiveManifest.sha256)
+                    ) {
+                        manager.markRunning()
+                        return@withContext finishArchive(spec, finalDir)
+                    }
+                }
+
                 val remaining = spec.manifest.totalBytes - manager.currentState().downloadedBytes
                 if (manager.rootDirectory.usableSpace < remaining + MIN_FREE_SPACE) {
                     manager.markFailed("可用空间不足，需要剩余文件大小外再预留 512 MiB")
@@ -70,14 +88,7 @@ class LocalModelDownloadWorker(
                     Files.move(staging.toPath(), finalDir.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 }
                 if (spec.archiveFilePath != null) {
-                    val archive = File(finalDir, spec.archiveFilePath)
-                    try {
-                        ArchiveExtractor.extract(archive, finalDir, ARCHIVE_ENTRY_WHITELIST)
-                    } catch (e: Exception) {
-                        manager.markFailed("模型解压失败：${e.message}")
-                        return@withContext Result.failure()
-                    }
-                    archive.delete()
+                    return@withContext finishArchive(spec, finalDir)
                 }
                 manager.activate()
                 manager.markCompleted()
@@ -93,6 +104,26 @@ class LocalModelDownloadWorker(
                 Result.failure()
             }
         }
+    }
+
+    /**
+     * 解压（若已经全部解压出来则跳过，衔接被打断后的重试）+ 清理归档 + 激活 + 标记完成。
+     * 解压失败时标记失败并返回 Failure；archive 已经不在也不报错，delete() 本身就是幂等的。
+     */
+    private fun finishArchive(spec: LocalModelSpec, finalDir: File): Result {
+        val archive = File(finalDir, spec.archiveFilePath!!)
+        if (!ARCHIVE_ENTRY_WHITELIST.all { File(finalDir, it).isFile }) {
+            try {
+                ArchiveExtractor.extract(archive, finalDir, ARCHIVE_ENTRY_WHITELIST)
+            } catch (e: Exception) {
+                manager.markFailed("模型解压失败：${e.message}")
+                return Result.failure()
+            }
+        }
+        archive.delete()
+        manager.activate()
+        manager.markCompleted()
+        return Result.success()
     }
 
     private fun downloadForegroundInfo(spec: LocalModelSpec): ForegroundInfo {

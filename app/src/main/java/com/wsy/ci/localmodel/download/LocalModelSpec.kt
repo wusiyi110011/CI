@@ -39,8 +39,7 @@ object LocalModelSpecs {
         notificationId = 3503,
         notificationTitle = "正在下载语音识别模型",
         manifest = SenseVoiceManifest.manifest,
-        archiveFilePath = "sensevoice.tar.bz2",
-        urlOf = { SenseVoiceManifest.DOWNLOAD_URL },
+        urlOf = { file -> SenseVoiceManifest.url(file) },
     )
 
     private val all = listOf(QWEN35, SENSE_VOICE)
