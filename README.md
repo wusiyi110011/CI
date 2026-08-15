@@ -127,7 +127,13 @@ domains → quests → tasks → sessions → ledger
 
 ## 构建与测试
 
-在仓库根目录执行：
+首次 clone 后需先拉取语音识别用的 sherpa-onnx AAR（不在 Maven Central，走 GitHub Release 分发）：
+
+```bash
+voice/fetch_sherpa.sh
+```
+
+然后在仓库根目录执行：
 
 ```bash
 # 构建 Debug APK

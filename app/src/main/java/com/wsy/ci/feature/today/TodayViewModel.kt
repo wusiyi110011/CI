@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
-import com.wsy.ci.core.data.ScheduleChangedException
 import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.BlockerEntity
 import com.wsy.ci.core.db.DomainEntity
@@ -22,10 +21,7 @@ import com.wsy.ci.llm.ParsedBlocker
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.LocalDate
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -190,6 +186,8 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- 一句话调整（NL → blocker → 重排 diff → 确认） ----------
+    // 状态机与重排/撤销逻辑已抽到 RescheduleFlow 以便语音指令复用；NlState / UndoSchedule
+    // 仍嵌套在这里是因为 Kotlin 不支持嵌套 typealias，为了不动 TodayScreen.kt 里的引用。
 
     sealed interface NlState {
         data object Idle : NlState
@@ -205,8 +203,6 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         data class Error(val message: String) : NlState
     }
 
-    val nlState = MutableStateFlow<NlState>(NlState.Idle)
-
     /**
      * 最近一次重排的短时撤销入口。只保存在内存里，不增加 Room 字段；
      * 快照里保留完整任务实体，故位置和状态都能原样恢复。
@@ -217,145 +213,26 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         val insertedBlockers: List<BlockerEntity>,
     )
 
-    val undoSchedule = MutableStateFlow<UndoSchedule?>(null)
-    private var undoExpiryJob: Job? = null
+    private val rescheduleFlow = container.rescheduleFlow
+
+    val nlState: StateFlow<NlState> = rescheduleFlow.nlState
+    val undoSchedule: StateFlow<UndoSchedule?> = rescheduleFlow.undoSchedule
 
     fun parseNl(text: String) {
         if (text.isBlank()) return
         viewModelScope.launch {
-            nlState.value = NlState.Loading
-            nlState.value = when (val r = container.llmService.parseBlockers(text)) {
+            rescheduleFlow.nlState.value = NlState.Loading
+            rescheduleFlow.nlState.value = when (val r = container.llmService.parseBlockers(text)) {
                 is LlmParsed.Ok -> NlState.BlockerPreview(r.value)
                 is LlmParsed.Err -> NlState.Error(r.message)
             }
         }
     }
 
-    /** 确认占位事件并生成各受影响日期的重排 diff，实际插入延迟到应用阶段。 */
-    fun confirmBlockers(parsed: List<ParsedBlocker>) {
-        viewModelScope.launch {
-            val schedule = container.scheduleRepository
-            val entities = parsed.mapNotNull { it.toEntityOrNull() }
-                .distinctBy { Triple(it.epochDay, it.startMinute, it.endMinute to it.title) }
-            if (entities.isEmpty()) {
-                nlState.value = NlState.Error("时间段无法解析，请换个说法")
-                return@launch
-            }
-            val days = entities.map { it.epochDay }.distinct().sorted()
-            val results = mutableListOf<Pair<Long, RescheduleResult>>()
-            val lines = mutableListOf<String>()
-            val originalTasks = mutableListOf<TaskEntity>()
-            for (day in days) {
-                val (result, original) = schedule.previewReschedule(day, entities)
-                results.add(day to result)
-                originalTasks += original
-                lines.addAll(
-                    schedule.describeDiff(result, original)
-                        .map { "${TimeFormat.shortDate(day)} $it" }
-                )
-            }
-            if (lines.isEmpty()) lines.add("确认后将记录占位，现有任务无需移动")
-            nlState.value = NlState.Diff(
-                results = results,
-                lines = lines,
-                pendingBlockers = entities,
-                originalTasks = originalTasks.distinctBy { it.id },
-            )
-        }
-    }
-
-    fun applyDiff(diff: NlState.Diff) {
-        if (!nlState.compareAndSet(diff, NlState.Loading)) return
-        viewModelScope.launch {
-            try {
-                val appliedTasks = diff.results.flatMap { it.second.tasks }.distinctBy { it.id }
-                val insertedBlockers = container.scheduleRepository.applyReschedules(
-                    results = diff.results.map { it.second },
-                    pendingBlockers = diff.pendingBlockers,
-                    expectedBeforeTasks = diff.originalTasks,
-                )
-                // 只在事务成功后暴露撤销入口，且保存实际写入的 blocker 主键。
-                val snapshot = UndoSchedule(
-                    beforeTasks = diff.originalTasks,
-                    appliedTasks = appliedTasks,
-                    insertedBlockers = insertedBlockers,
-                )
-                // 数据写入完成后才把动作暴露给 UI，避免 Snackbar 先于时间线刷新出现。
-                offerUndo(snapshot)
-                nlState.value = NlState.Idle
-                CiWidgetUpdater.updateAll(getApplication())
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: ScheduleChangedException) {
-                nlState.value = NlState.Error("计划已发生变化，请重新预览后再应用")
-            } catch (_: Exception) {
-                nlState.value = NlState.Error("调整应用失败，原计划未改变")
-            }
-        }
-    }
-
-    /** 在短时窗口内恢复重排前的任务和本次新增 blocker。 */
-    fun undoLastReschedule() {
-        viewModelScope.launch {
-            val snapshot = undoSchedule.value ?: return@launch
-            undoExpiryJob?.cancel()
-            undoSchedule.value = null
-            container.scheduleRepository.undoReschedule(
-                beforeTasks = snapshot.beforeTasks,
-                appliedTasks = snapshot.appliedTasks,
-                insertedBlockers = snapshot.insertedBlockers,
-            )
-            CiWidgetUpdater.updateAll(getApplication())
-        }
-    }
-
-    /** Snackbar 被动关闭时清掉撤销入口，避免旧操作再次被误用。 */
-    fun dismissUndo() {
-        undoExpiryJob?.cancel()
-        undoSchedule.value = null
-    }
-
-    private fun offerUndo(snapshot: UndoSchedule) {
-        undoExpiryJob?.cancel()
-        undoSchedule.value = snapshot
-        undoExpiryJob = viewModelScope.launch {
-            delay(UNDO_WINDOW_MILLIS)
-            undoSchedule.value = null
-        }
-    }
-
-    /** 放弃预览：尚未落库，因此只关闭预览。 */
-    fun cancelDiff() {
-        viewModelScope.launch {
-            nlState.value = NlState.Idle
-        }
-    }
-
-    fun dismissNl() {
-        nlState.value = NlState.Idle
-    }
-
-    private fun ParsedBlocker.toEntityOrNull(): BlockerEntity? = try {
-        val day = LocalDate.parse(date).toEpochDay()
-        val startMin = parseHm(start) ?: return null
-        val endMin = parseHm(end) ?: return null
-        if (endMin <= startMin) null
-        else BlockerEntity(epochDay = day, startMinute = startMin, endMinute = endMin, title = title)
-    } catch (_: Exception) {
-        null
-    }
-
-    private fun parseHm(text: String): Int? {
-        val parts = text.trim().split(":")
-        if (parts.size != 2) return null
-        val h = parts[0].toIntOrNull() ?: return null
-        val m = parts[1].toIntOrNull() ?: return null
-        if (h !in 0..23 || m !in 0..59) return null
-        return h * 60 + m
-    }
-
-    private companion object {
-        /** Snackbar 的可操作窗口，足够完成一次确认又不会长期保留旧快照。 */
-        const val UNDO_WINDOW_MILLIS = 8_000L
-    }
+    fun confirmBlockers(parsed: List<ParsedBlocker>) = rescheduleFlow.confirmBlockers(parsed)
+    fun applyDiff(diff: NlState.Diff) = rescheduleFlow.applyDiff(diff)
+    fun undoLastReschedule() = rescheduleFlow.undoLastReschedule()
+    fun dismissUndo() = rescheduleFlow.dismissUndo()
+    fun cancelDiff() = rescheduleFlow.cancelDiff()
+    fun dismissNl() = rescheduleFlow.dismissNl()
 }

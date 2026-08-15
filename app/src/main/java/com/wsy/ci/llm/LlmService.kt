@@ -2,6 +2,7 @@ package com.wsy.ci.llm
 
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.Rarity
+import com.wsy.ci.core.voice.VoiceTarget
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -35,6 +36,20 @@ data class PricedItem(
     val priceYuan: Double,
     val emoji: String = "🎁",
     val description: String = "",
+)
+
+@Serializable
+data class ParsedVoiceSpan(val date: String, val start: String, val end: String)
+
+/** 规则解析器兜不住时，LLM 兜底解析出的语音指令结构；转成 [com.wsy.ci.core.voice.VoiceIntent] 复用同一套确认/执行逻辑。 */
+@Serializable
+data class ParsedVoiceCommand(
+    val intent: String,
+    val spans: List<ParsedVoiceSpan> = emptyList(),
+    val reason: String = "",
+    val from: String? = null,
+    val to: String? = null,
+    val targetId: Long? = null,
 )
 
 sealed interface LlmParsed<out T> {
@@ -96,6 +111,34 @@ class LlmService(private val gateway: LlmGateway) {
         }
     }
 
+    /**
+     * 规则解析器兜不住时的语音指令兜底：候选清单以 `id|名称` 塞进 prompt，明确要求
+     * targetId 只能从清单里选，禁止编造——这是「开始某任务」匹配准确率的关键。
+     */
+    suspend fun parseVoiceCommand(text: String, candidates: List<VoiceTarget>): LlmParsed<ParsedVoiceCommand> {
+        val today = LocalDate.now()
+        val candidateLines = candidates.take(MAX_VOICE_CANDIDATES).joinToString("\n") { "${it.id}|${it.name}" }
+        val system = """
+            你把中文语音指令解析成结构化意图。今天是 ${today.format(DateTimeFormatter.ISO_LOCAL_DATE)}（${today.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.CHINA)}）。
+            intent 只能是以下三选一：
+            - "block"：记一段不可安排的时间（没空/有事/要去…），配合 spans 和 reason
+            - "query"：查看某天或某段时间的安排，配合 from 和 to
+            - "start"：开始一个具体任务/主线/支线，targetId 只能从下面候选清单里选 id，禁止编造：
+            $candidateLines
+            「上午」=09:00-12:00，「下午」=14:00-18:00，「晚上」=19:00-22:00，「全天」=08:00-22:00。
+            只输出 JSON，不要解释，不需要的字段留空或省略：
+            {"intent":"block|query|start","spans":[{"date":"yyyy-MM-dd","start":"HH:mm","end":"HH:mm"}],"reason":"","from":"yyyy-MM-dd","to":"yyyy-MM-dd","targetId":123}
+        """.trimIndent()
+        return when (val result = gateway.complete(LlmTaskType.NL_PARSE, system, text)) {
+            is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
+            is LlmResult.Success -> try {
+                LlmParsed.Ok(json.decodeFromString<ParsedVoiceCommand>(extractJson(result.content)))
+            } catch (e: Exception) {
+                LlmParsed.Err("语音指令解析失败：${e.message?.take(120)}")
+            }
+        }
+    }
+
     /** 为已有领域补生成 6 级头衔。 */
     suspend fun generateTitles(domainName: String): LlmParsed<List<String>> {
         val system = """
@@ -143,5 +186,10 @@ class LlmService(private val gateway: LlmGateway) {
             is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
             is LlmResult.Success -> LlmParsed.Ok(result.content.trim())
         }
+    }
+
+    private companion object {
+        /** 候选清单太长会挤爆 NL_PARSE 的 token 预算，超过这个数就截断。 */
+        const val MAX_VOICE_CANDIDATES = 40
     }
 }

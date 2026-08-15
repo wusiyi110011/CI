@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.wsy.ci.work.LocalModelDownloadWorker
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,9 +20,12 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-/** Qwen 本地模型下载的应用专属目录、状态及 WorkManager 控制入口。 */
-class LocalModelDownloadManager private constructor(private val context: Context) {
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+/** 本地模型下载的应用专属目录、状态及 WorkManager 控制入口；按 [spec] 参数化，一个模型一份实例。 */
+class LocalModelDownloadManager private constructor(
+    private val context: Context,
+    val spec: LocalModelSpec,
+) {
+    private val prefs = context.getSharedPreferences(spec.prefsName, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val _state = MutableStateFlow(loadState())
     val state: StateFlow<LocalModelDownloadState> = _state
@@ -29,9 +33,9 @@ class LocalModelDownloadManager private constructor(private val context: Context
     private val stopping = AtomicBoolean(false)
     private val generation = AtomicLong(prefs.getLong(KEY_GENERATION, 0L))
 
-    val rootDirectory: File get() = File(context.filesDir, "local-model/qwen3.5-2b-mnn")
+    val rootDirectory: File get() = File(context.filesDir, "local-model/${spec.directoryName}")
     val activeDirectory: File
-        get() = File(rootDirectory, "revisions/${Qwen35ModelManifest.REVISION}")
+        get() = File(rootDirectory, "revisions/${spec.manifest.revision}")
 
     fun enqueue(allowMetered: Boolean = false) {
         synchronized(lock) {
@@ -58,11 +62,12 @@ class LocalModelDownloadManager private constructor(private val context: Context
                     workDataOf(
                         LocalModelDownloadWorker.KEY_ALLOW_METERED to allowMetered,
                         LocalModelDownloadWorker.KEY_GENERATION to nextGeneration,
+                        LocalModelDownloadWorker.KEY_MODEL_ID to spec.id,
                     )
                 )
                 .addTag(WORK_TAG)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+            WorkManager.getInstance(context).enqueueUniqueWork(spec.workName, ExistingWorkPolicy.REPLACE, request)
         }
     }
 
@@ -71,7 +76,7 @@ class LocalModelDownloadManager private constructor(private val context: Context
             stopping.set(true)
             invalidateGeneration()
             update { it.copy(status = LocalModelDownloadStatus.PAUSED) }
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(spec.workName)
         }
     }
 
@@ -85,7 +90,7 @@ class LocalModelDownloadManager private constructor(private val context: Context
             stopping.set(true)
             invalidateGeneration()
             update { it.copy(status = LocalModelDownloadStatus.CANCELED) }
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(spec.workName)
         }
     }
 
@@ -93,10 +98,10 @@ class LocalModelDownloadManager private constructor(private val context: Context
         synchronized(lock) {
             stopping.set(true)
             invalidateGeneration()
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(spec.workName)
             rootDirectory.deleteRecursively()
             prefs.edit().remove(KEY_STATE).apply()
-            _state.value = LocalModelDownloadState.initial(Qwen35ModelManifest.manifest)
+            _state.value = LocalModelDownloadState.initial(spec.manifest)
         }
     }
 
@@ -112,10 +117,10 @@ class LocalModelDownloadManager private constructor(private val context: Context
     internal fun markCompleted() = update { it.copy(status = LocalModelDownloadStatus.COMPLETED, error = null) }
     internal fun markFailed(error: String) = update { it.copy(status = LocalModelDownloadStatus.FAILED, error = error) }
     internal fun activate() {
-        val revisionDir = File(rootDirectory, "revisions/${Qwen35ModelManifest.REVISION}")
+        val revisionDir = File(rootDirectory, "revisions/${spec.manifest.revision}")
         require(revisionDir.isDirectory) { "固定 revision 目录不存在" }
         val marker = File(rootDirectory, "active_revision.next")
-        marker.writeText(Qwen35ModelManifest.REVISION)
+        marker.writeText(spec.manifest.revision)
         java.nio.file.Files.move(
             marker.toPath(),
             File(rootDirectory, "active_revision").toPath(),
@@ -134,8 +139,8 @@ class LocalModelDownloadManager private constructor(private val context: Context
     }
 
     private fun loadState(): LocalModelDownloadState {
-        val raw = prefs.getString(KEY_STATE, null) ?: return LocalModelDownloadState.initial(Qwen35ModelManifest.manifest)
-        return runCatching { json.decodeFromString<LocalModelDownloadState>(raw) }.getOrElse { LocalModelDownloadState.initial(Qwen35ModelManifest.manifest) }
+        val raw = prefs.getString(KEY_STATE, null) ?: return LocalModelDownloadState.initial(spec.manifest)
+        return runCatching { json.decodeFromString<LocalModelDownloadState>(raw) }.getOrElse { LocalModelDownloadState.initial(spec.manifest) }
     }
 
     private fun networkReady(allowMetered: Boolean): Boolean {
@@ -152,15 +157,14 @@ class LocalModelDownloadManager private constructor(private val context: Context
     }
 
     companion object {
-        private const val PREFS = "local_model_download"
         private const val KEY_STATE = "state"
         private const val KEY_GENERATION = "generation"
-        const val WORK_NAME = "qwen35-2b-mnn-download"
         const val WORK_TAG = "local-model-download"
 
-        @Volatile private var instance: LocalModelDownloadManager? = null
-        fun get(context: Context): LocalModelDownloadManager = instance ?: synchronized(this) {
-            instance ?: LocalModelDownloadManager(context.applicationContext).also { instance = it }
-        }
+        private val instances = ConcurrentHashMap<String, LocalModelDownloadManager>()
+
+        /** 同一个 [spec] 在整个进程内只有一份实例，多个模型互不干扰。 */
+        fun get(context: Context, spec: LocalModelSpec): LocalModelDownloadManager =
+            instances.getOrPut(spec.id) { LocalModelDownloadManager(context.applicationContext, spec) }
     }
 }

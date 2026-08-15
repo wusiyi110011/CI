@@ -16,6 +16,7 @@ retrofit = "2.11.0"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.7.3"
 securityCrypto = "1.1.0-alpha06"
+commonsCompress = "1.27.1"
 junit = "4.13.2"
 androidxTestExtJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
@@ -41,6 +42,7 @@ androidx-work-runtime = { group = "androidx.work", name = "work-runtime-ktx", ve
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
 vico-compose-m3 = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

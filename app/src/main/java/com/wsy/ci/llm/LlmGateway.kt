@@ -31,7 +31,8 @@ val LlmTaskType.localGenerationOptions: LocalGenerationOptions
     get() = when (this) {
         LlmTaskType.ROUTE_GEN -> LocalGenerationOptions(thinking = true, maxTokens = 2048)
         LlmTaskType.REVIEW_ANALYSIS -> LocalGenerationOptions(thinking = true, maxTokens = 1536)
-        LlmTaskType.NL_PARSE -> LocalGenerationOptions(thinking = false, maxTokens = 256)
+        // 语音指令的候选任务清单会塞进 prompt，256 token 装不下，抬到 512。
+        LlmTaskType.NL_PARSE -> LocalGenerationOptions(thinking = false, maxTokens = 512)
         LlmTaskType.ITEM_PRICING -> LocalGenerationOptions(thinking = false, maxTokens = 384)
         LlmTaskType.TITLE_GEN -> LocalGenerationOptions(thinking = false, maxTokens = 256)
         LlmTaskType.IMAGE_UNDERSTAND -> LocalGenerationOptions(thinking = false, maxTokens = 512)

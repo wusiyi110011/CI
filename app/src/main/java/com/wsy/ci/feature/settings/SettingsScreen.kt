@@ -65,6 +65,11 @@ import com.wsy.ci.core.settings.MotionMode
 import com.wsy.ci.llm.LlmEndpoints
 import com.wsy.ci.llm.LlmSettings
 import com.wsy.ci.llm.LlmTaskType
+import com.wsy.ci.localmodel.download.LocalModelDownloadManager
+import com.wsy.ci.localmodel.download.LocalModelDownloadState
+import com.wsy.ci.localmodel.download.LocalModelDownloadStatus
+import com.wsy.ci.localmodel.download.SenseVoiceManifest
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** API Key 卡高度，见逐屏布局规格第 6 节。 */
 private val KEY_CARD_HEIGHT: Dp = 180.dp
@@ -77,15 +82,22 @@ private enum class SettingsPane(val label: String) {
     ROUTING("模型路由"),
 }
 
+/** 计费网络确认框服务两个不同的下载器，靠这个区分文案和续传目标。 */
+private enum class MeteredDownloadTarget { QWEN, ASR }
+
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
     localModelController: LocalModelController? = null,
     backupController: DataBackupController? = null,
+    asrDownloads: LocalModelDownloadManager? = null,
 ) {
     val localController = localModelController ?: remember { InMemoryLocalModelController() }
     val dataBackupController = backupController ?: remember { InMemoryBackupController() }
     val localModel by localController.state.collectAsStateWithLifecycle()
+    val asrState by (asrDownloads?.state ?: remember {
+        MutableStateFlow(LocalModelDownloadState.initial(SenseVoiceManifest.manifest))
+    }).collectAsStateWithLifecycle()
     val backupState by dataBackupController.state.collectAsStateWithLifecycle()
     val backupBusy = backupState.backingUp ||
         backupState.importingId != null || backupState.deletingId != null
@@ -97,18 +109,18 @@ fun SettingsScreen(
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
-    var confirmMetered by remember { mutableStateOf(false) }
+    var pendingMeteredTarget by remember { mutableStateOf<MeteredDownloadTarget?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showBackups by remember { mutableStateOf(false) }
     var confirmRestoreId by remember { mutableStateOf<String?>(null) }
     var confirmDeleteBackupId by remember { mutableStateOf<String?>(null) }
     var selectedPane by rememberSaveable { mutableStateOf(SettingsPane.APPEARANCE) }
+    val isMetered = { context.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered }
     val requestDownload = {
-        if (context.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered) {
-            confirmMetered = true
-        } else {
-            localController.download(false)
-        }
+        if (isMetered()) pendingMeteredTarget = MeteredDownloadTarget.QWEN else localController.download(false)
+    }
+    val requestAsrDownload: () -> Unit = {
+        if (isMetered()) pendingMeteredTarget = MeteredDownloadTarget.ASR else asrDownloads?.enqueue(false)
     }
     val openBackupList = {
         if (!backupBusy) {
@@ -218,6 +230,14 @@ fun SettingsScreen(
                                 onOpenImport = openBackupList,
                                 showBackup = false,
                             )
+                            VoiceModelDownloadCard(
+                                state = asrState,
+                                onDownload = requestAsrDownload,
+                                onPause = { asrDownloads?.pause() },
+                                onResume = requestAsrDownload,
+                                onCancelDownload = { asrDownloads?.cancel() },
+                                onDelete = { asrDownloads?.delete() },
+                            )
                         }
                         SettingsPane.BACKUP -> {
                             SettingsSectionTitle(
@@ -244,18 +264,27 @@ fun SettingsScreen(
 
         }
     }
-    if (confirmMetered) {
+    pendingMeteredTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { confirmMetered = false },
+            onDismissRequest = { pendingMeteredTarget = null },
             title = { Text("使用计费网络下载？") },
-            text = { Text("模型约 1.39 GB。本次确认只对当前下载任务生效。") },
+            text = {
+                val sizeLabel = when (target) {
+                    MeteredDownloadTarget.QWEN -> "1.39 GB"
+                    MeteredDownloadTarget.ASR -> "166 MB"
+                }
+                Text("模型约 $sizeLabel。本次确认只对当前下载任务生效。")
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmMetered = false
-                    localController.download(true)
+                    pendingMeteredTarget = null
+                    when (target) {
+                        MeteredDownloadTarget.QWEN -> localController.download(true)
+                        MeteredDownloadTarget.ASR -> asrDownloads?.enqueue(true)
+                    }
                 }) { Text("继续下载") }
             },
-            dismissButton = { TextButton(onClick = { confirmMetered = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { pendingMeteredTarget = null }) { Text("取消") } },
         )
     }
     if (confirmDelete) {
@@ -523,6 +552,108 @@ private fun LocalModelAndBackupCard(
             )
         }
     }
+}
+
+/**
+ * 语音识别模型（SenseVoice）下载卡，结构照抄 [LocalModelAndBackupCard] 的下载区：
+ * 模型名 / 大小 / 状态 chip / 按 status 分支的按钮 / 进度条。没有「服务」的概念，
+ * 文件下载完就绪即用，不需要单独启停。
+ */
+@Composable
+private fun VoiceModelDownloadCard(
+    state: LocalModelDownloadState,
+    onDownload: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Text("语音识别模型", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "SenseVoice-Small · sherpa-onnx 离线 · 约 166 MB",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            StatusChip(
+                label = asrStatusLabel(state.status),
+                active = state.status == LocalModelDownloadStatus.COMPLETED,
+                error = state.status == LocalModelDownloadStatus.FAILED,
+            )
+        }
+
+        state.error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            when (state.status) {
+                LocalModelDownloadStatus.IDLE,
+                LocalModelDownloadStatus.CANCELED -> Button(onClick = onDownload, shape = CiShapes.pill) {
+                    Text("下载")
+                }
+                LocalModelDownloadStatus.WAITING_NETWORK,
+                LocalModelDownloadStatus.QUEUED,
+                LocalModelDownloadStatus.DOWNLOADING -> {
+                    Button(onClick = onPause, shape = CiShapes.pill) { Text("暂停") }
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+                LocalModelDownloadStatus.PAUSED -> {
+                    Button(onClick = onResume, shape = CiShapes.pill) { Text("继续") }
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+                LocalModelDownloadStatus.FAILED -> {
+                    Button(onClick = onDownload, shape = CiShapes.pill) { Text("重试") }
+                    OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除") }
+                }
+                LocalModelDownloadStatus.COMPLETED -> {
+                    OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除模型") }
+                }
+                LocalModelDownloadStatus.VERIFYING -> {
+                    OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                }
+            }
+            if (state.status == LocalModelDownloadStatus.WAITING_NETWORK ||
+                state.status == LocalModelDownloadStatus.QUEUED ||
+                state.status == LocalModelDownloadStatus.DOWNLOADING ||
+                state.status == LocalModelDownloadStatus.VERIFYING ||
+                state.status == LocalModelDownloadStatus.PAUSED
+            ) {
+                Text(
+                    "${(state.fraction * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+            }
+        }
+        if (state.status == LocalModelDownloadStatus.WAITING_NETWORK ||
+            state.status == LocalModelDownloadStatus.QUEUED ||
+            state.status == LocalModelDownloadStatus.DOWNLOADING ||
+            state.status == LocalModelDownloadStatus.VERIFYING ||
+            state.status == LocalModelDownloadStatus.PAUSED
+        ) {
+            CiProgressBar(progress = state.fraction, color = MaterialTheme.colorScheme.secondary)
+        }
+    }
+}
+
+private fun asrStatusLabel(status: LocalModelDownloadStatus): String = when (status) {
+    LocalModelDownloadStatus.IDLE, LocalModelDownloadStatus.CANCELED -> "未安装"
+    LocalModelDownloadStatus.WAITING_NETWORK -> "等待网络"
+    LocalModelDownloadStatus.QUEUED -> "排队"
+    LocalModelDownloadStatus.DOWNLOADING -> "下载中"
+    LocalModelDownloadStatus.PAUSED -> "已暂停"
+    LocalModelDownloadStatus.VERIFYING -> "校验中"
+    LocalModelDownloadStatus.FAILED -> "下载失败"
+    LocalModelDownloadStatus.COMPLETED -> "已安装"
 }
 
 @Composable

@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+private val sherpaOnnxAar = file("libs/sherpa-onnx-1.13.5.aar")
+
 android {
     namespace = "com.wsy.ci"
     compileSdk = 35
@@ -43,7 +45,19 @@ android {
     }
 }
 
+tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }.configureEach {
+    doFirst {
+        if (!sherpaOnnxAar.exists()) {
+            throw GradleException(
+                "缺少 ${sherpaOnnxAar.path}，请先运行 voice/fetch_sherpa.sh 拉取 sherpa-onnx AAR。"
+            )
+        }
+    }
+}
+
 dependencies {
+    implementation(files(sherpaOnnxAar))
+    implementation(libs.commons.compress)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

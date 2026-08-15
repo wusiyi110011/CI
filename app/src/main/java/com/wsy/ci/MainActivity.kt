@@ -11,8 +11,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,8 +33,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,8 +48,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.content.ContextCompat
 import com.wsy.ci.core.designsystem.CiShapes
@@ -65,6 +72,10 @@ import com.wsy.ci.feature.settings.DataBackupController
 import com.wsy.ci.feature.shop.ShopScreen
 import com.wsy.ci.feature.stats.StatsScreen
 import com.wsy.ci.feature.today.TodayScreen
+import com.wsy.ci.feature.voice.VoiceOverlayHost
+import com.wsy.ci.feature.voice.VoiceViewModel
+import com.wsy.ci.localmodel.download.LocalModelDownloadManager
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class Destination(
     val label: String,
@@ -83,10 +94,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { /* 是否授权由用户决定；拒绝时计时仍可在应用内继续。 */ }
 
+    /** 首次长按 AI 图标才申请，不在 onCreate 里主动要；拒绝时下次长按会再检查一次。 */
+    private val recordAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* 是否授权由用户决定。 */ }
+
     private val localModelController: LocalModelController
         get() = (application as CiApp).container.localModelController
     private val dataBackupController: DataBackupController
         get() = (application as CiApp).container.dataBackupController
+    private val asrDownloads: LocalModelDownloadManager
+        get() = (application as CiApp).container.asrDownloads
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,7 +140,14 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    CiRoot(localModelController, dataBackupController)
+                    CiRoot(
+                        localModelController = localModelController,
+                        dataBackupController = dataBackupController,
+                        asrDownloads = asrDownloads,
+                        onRequestRecordAudioPermission = {
+                            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                    )
                 }
             }
         }
@@ -138,11 +163,18 @@ class MainActivity : ComponentActivity() {
 private fun CiRoot(
     localModelController: LocalModelController,
     dataBackupController: DataBackupController,
+    asrDownloads: LocalModelDownloadManager,
+    onRequestRecordAudioPermission: () -> Unit,
 ) {
     var destination by rememberSaveable { mutableStateOf(Destination.TODAY) }
     val stateHolder = rememberSaveableStateHolder()
     val localModelState by localModelController.state.collectAsStateWithLifecycle()
     var confirmCancelInference by rememberSaveable { mutableStateOf(false) }
+    val voiceViewModel: VoiceViewModel = viewModel()
+    val voiceState by voiceViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(voiceViewModel) {
+        voiceViewModel.navigationEvents.collect { destination = it }
+    }
     Row(modifier = Modifier.fillMaxSize()) {
         CiNavigationRail(
             selected = destination,
@@ -162,6 +194,11 @@ private fun CiRoot(
                     LocalModelServiceState.INFERENCING -> confirmCancelInference = true
                 }
             },
+            onVoiceStart = voiceViewModel::onVoiceStart,
+            onVoiceDragCancelChanged = voiceViewModel::onVoiceDragCancelChanged,
+            onVoiceEnd = voiceViewModel::onVoiceEnd,
+            onVoiceCancel = voiceViewModel::onVoiceCancel,
+            onRequestRecordAudioPermission = onRequestRecordAudioPermission,
         )
         Box(modifier = Modifier.weight(1f)) {
             stateHolder.SaveableStateProvider(destination) {
@@ -177,6 +214,7 @@ private fun CiRoot(
                     Destination.SETTINGS -> SettingsScreen(
                         localModelController = localModelController,
                         backupController = dataBackupController,
+                        asrDownloads = asrDownloads,
                     )
                 }
             }
@@ -200,6 +238,7 @@ private fun CiRoot(
             },
         )
     }
+    VoiceOverlayHost(state = voiceState, viewModel = voiceViewModel)
 }
 
 /**
@@ -213,6 +252,11 @@ internal fun CiNavigationRail(
     localModelState: com.wsy.ci.feature.settings.LocalModelUiState,
     onSelect: (Destination) -> Unit,
     onAiClick: () -> Unit,
+    onVoiceStart: () -> Unit,
+    onVoiceDragCancelChanged: (Boolean) -> Unit,
+    onVoiceEnd: () -> Unit,
+    onVoiceCancel: () -> Unit,
+    onRequestRecordAudioPermission: () -> Unit,
 ) {
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
     Column(
@@ -256,14 +300,30 @@ internal fun CiNavigationRail(
                 }
             }
         }
-        AiQuickEntry(state = localModelState, onClick = onAiClick)
+        AiQuickEntry(
+            state = localModelState,
+            onClick = onAiClick,
+            onVoiceStart = onVoiceStart,
+            onVoiceDragCancelChanged = onVoiceDragCancelChanged,
+            onVoiceEnd = onVoiceEnd,
+            onVoiceCancel = onVoiceCancel,
+            onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+        )
     }
 }
+
+/** 长按上滑超过这个距离视为取消录音。 */
+private val VOICE_CANCEL_THRESHOLD = 64.dp
 
 @Composable
 private fun AiQuickEntry(
     state: com.wsy.ci.feature.settings.LocalModelUiState,
     onClick: () -> Unit,
+    onVoiceStart: () -> Unit,
+    onVoiceDragCancelChanged: (Boolean) -> Unit,
+    onVoiceEnd: () -> Unit,
+    onVoiceCancel: () -> Unit,
+    onRequestRecordAudioPermission: () -> Unit,
 ) {
     val active = state.serviceState != LocalModelServiceState.OFF
     val content = if (active) {
@@ -272,6 +332,7 @@ private fun AiQuickEntry(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val companionState = state.companionState
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .size(CiSizes.navRailItem)
@@ -280,7 +341,50 @@ private fun AiQuickEntry(
                 if (active) MaterialTheme.colorScheme.primaryContainer
                 else MaterialTheme.colorScheme.background.copy(alpha = 0f),
             )
-            .clickable(role = Role.Button, onClick = onClick),
+            .pointerInput(Unit) {
+                val cancelThresholdPx = VOICE_CANCEL_THRESHOLD.toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val longPressUp = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        waitForUpOrCancellation()
+                    }
+                    if (longPressUp != null) {
+                        onClick()
+                        return@awaitEachGesture
+                    }
+                    val hasPermission = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!hasPermission) {
+                        onRequestRecordAudioPermission()
+                        // 权限弹窗弹出期间手指多半已经离开，吞掉剩余事件，这次长按不触发录音。
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.all { !it.pressed }) break
+                        }
+                        return@awaitEachGesture
+                    }
+                    onVoiceStart()
+                    var cancelling = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val dy = change.position.y - down.position.y
+                        val nowCancelling = -dy > cancelThresholdPx
+                        if (nowCancelling != cancelling) {
+                            cancelling = nowCancelling
+                            onVoiceDragCancelChanged(cancelling)
+                        }
+                        if (!change.pressed) {
+                            change.consume()
+                            break
+                        }
+                        change.consume()
+                    }
+                    if (cancelling) onVoiceCancel() else onVoiceEnd()
+                }
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

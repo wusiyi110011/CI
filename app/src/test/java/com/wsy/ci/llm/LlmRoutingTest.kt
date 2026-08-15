@@ -30,7 +30,7 @@ class LlmRoutingTest {
     fun `任务本地预算符合约定`() {
         assertEquals(LocalGenerationOptions(true, 2048), LlmTaskType.ROUTE_GEN.localGenerationOptions)
         assertEquals(LocalGenerationOptions(true, 1536), LlmTaskType.REVIEW_ANALYSIS.localGenerationOptions)
-        assertEquals(LocalGenerationOptions(false, 256), LlmTaskType.NL_PARSE.localGenerationOptions)
+        assertEquals(LocalGenerationOptions(false, 512), LlmTaskType.NL_PARSE.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 384), LlmTaskType.ITEM_PRICING.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 256), LlmTaskType.TITLE_GEN.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 512), LlmTaskType.IMAGE_UNDERSTAND.localGenerationOptions)

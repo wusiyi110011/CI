@@ -1,0 +1,73 @@
+package com.wsy.ci.voice
+
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import kotlin.math.sqrt
+
+/** 一次录音的结果：归一化到 [-1, 1] 的采样点（sherpa-onnx 要求浮点输入），以及采样率。 */
+data class RecordedAudio(val samples: FloatArray, val sampleRateHz: Int)
+
+/**
+ * 16kHz 单声道 PCM 录音器。按块读取、累积样本，每块顺带算 RMS 音量推给 [onAmplitude] 供
+ * 录音浮层画波形动画。预分配 60 秒上限的缓冲区，防止误按长按录爆内存，用完即自动停止。
+ */
+class AudioRecorder {
+    @Volatile private var recording = false
+
+    suspend fun record(onAmplitude: (Float) -> Unit): RecordedAudio {
+        val minBuffer = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        ).coerceAtLeast(SAMPLE_RATE / 10 * BYTES_PER_SAMPLE)
+        val audioRecord = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            minBuffer,
+        )
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            audioRecord.release()
+            error("录音设备初始化失败")
+        }
+
+        val maxSamples = SAMPLE_RATE * MAX_DURATION_SECONDS
+        val buffer = FloatArray(maxSamples)
+        val chunk = ShortArray(minBuffer / BYTES_PER_SAMPLE)
+        var written = 0
+        recording = true
+        try {
+            audioRecord.startRecording()
+            while (recording && written < maxSamples) {
+                val n = audioRecord.read(chunk, 0, chunk.size)
+                if (n <= 0) continue
+                val count = n.coerceAtMost(maxSamples - written)
+                var sumSquares = 0.0
+                for (i in 0 until count) {
+                    val f = chunk[i] / 32768f
+                    buffer[written + i] = f
+                    sumSquares += (f * f).toDouble()
+                }
+                written += count
+                onAmplitude(sqrt(sumSquares / count).toFloat())
+            }
+        } finally {
+            audioRecord.stop()
+            audioRecord.release()
+        }
+        return RecordedAudio(buffer.copyOf(written), SAMPLE_RATE)
+    }
+
+    /** 让 [record] 的循环在处理完当前块后正常返回，而不是从外部强行打断。 */
+    fun stop() {
+        recording = false
+    }
+
+    companion object {
+        const val SAMPLE_RATE = 16_000
+        const val MAX_DURATION_SECONDS = 60
+        private const val BYTES_PER_SAMPLE = 2
+    }
+}
