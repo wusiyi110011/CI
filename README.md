@@ -154,4 +154,4 @@ APK 输出在 `app/build/outputs/apk/debug/app-debug.apk`。当前只有 JVM 单
 
 ## 许可与第三方声明
 
-项目自身的许可策略尚未单独声明。MNN、Qwen3.5-2B、sherpa-onnx 及模型转换相关组件的归属与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。分发 APK 前请确认所有第三方组件与模型的使用条件。
+本项目自身以 [Apache License 2.0](LICENSE) 开源，Copyright © 2026 吴思毅。MNN、Qwen3.5-2B、sherpa-onnx 及模型转换相关组件的归属与许可不受本许可影响，完整条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。分发 APK 前请确认所有第三方组件与模型的使用条件。

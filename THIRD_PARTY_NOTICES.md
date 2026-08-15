@@ -25,4 +25,20 @@
 - 模型页面标示许可：Apache License 2.0
 - 权重不随 APK 分发，由用户明确操作后下载到应用专属目录。
 
+## sherpa-onnx 1.13.5
+
+- 项目：sherpa-onnx（Next-gen Kaldi）
+- 上游：https://github.com/k2-fsa/sherpa-onnx
+- 版权归原作者及贡献者所有
+- 许可：Apache License 2.0
+- 本项目以 `app/libs` 本地 AAR 形式接入，提供离线语音识别运行时。
+
+## SenseVoice-Small
+
+- 项目：SenseVoice（FunAudioLLM）
+- 上游代码：https://github.com/FunAudioLLM/SenseVoice
+- 模型页面：https://huggingface.co/FunAudioLLM/SenseVoiceSmall
+- 代码许可：MIT License；模型权重许可以模型页面为准
+- 本项目以 int8 量化模型形式用于离线语音识别，模型不随 APK 分发，由用户明确操作后下载到应用专属目录。
+
 Apache License 2.0 正文：https://www.apache.org/licenses/LICENSE-2.0
