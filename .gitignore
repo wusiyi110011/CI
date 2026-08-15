@@ -13,5 +13,9 @@ captures/
 .codex/
 .claude/
 .workbuddy
+.planning/
+generated-images/
+UI/
+icon/
 CLAUDE.md
 AGENTS.md
