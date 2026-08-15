@@ -230,14 +230,20 @@ private fun RemovableFilterChip(text: String, onRemove: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
         ) {
             Text(text, style = MaterialTheme.typography.labelMedium)
-            CiFunctionIcon(
-                resourceId = R.drawable.ic_ci_close,
-                contentDescription = "移除$text",
+            Box(
                 modifier = Modifier
-                    .size(CiSizes.compactIcon)
+                    .size(CiSizes.fieldHeight)
+                    .clip(CiShapes.pill)
                     .clickable(onClick = onRemove)
-                    .padding(vertical = CiSpacing.xxs),
-            )
+                    .padding(CiSizes.iconTouchPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CiFunctionIcon(
+                    resourceId = R.drawable.ic_ci_close,
+                    contentDescription = "移除$text",
+                    modifier = Modifier.size(CiSizes.actionIcon),
+                )
+            }
         }
     }
 }

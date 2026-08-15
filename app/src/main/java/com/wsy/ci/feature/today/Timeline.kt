@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wsy.ci.R
 import com.wsy.ci.core.db.QuestEntity
+import com.wsy.ci.core.db.BlockerEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
@@ -55,6 +56,7 @@ import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.designsystem.TaskBlockColors
+import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.Span
 import com.wsy.ci.core.timeline.TaskLanes
@@ -72,6 +74,7 @@ data class ActualBlock(
     val endMinute: Int,
     val running: Boolean,
     val rewardCi: Long,
+    val focus: FocusOutcome = FocusOutcome.COMPLETED,
     val isContinuation: Boolean = false,
 )
 
@@ -112,6 +115,7 @@ private const val ACTUAL_TRACK_WEIGHT = 0.45f
 fun DayTimeline(
     segments: List<TaskSegment>,
     actuals: List<ActualBlock>,
+    blockers: List<BlockerEntity> = emptyList(),
     onTaskClick: (TaskEntity) -> Unit,
     modifier: Modifier = Modifier,
     onActualClick: (ActualBlock) -> Unit = {},
@@ -119,6 +123,7 @@ fun DayTimeline(
     endHour: Int = 24,
     nowMinute: Int? = null,
     showActualTrack: Boolean = true,
+    scrollIdentity: Any? = Unit,
 ) {
     val totalHeight = HOUR_HEIGHT * (endHour - startHour) + BOTTOM_SLACK
     fun yOf(minute: Int): Dp =
@@ -131,8 +136,8 @@ fun DayTimeline(
     // 只滚一次，之后不再和用户的手动滚动抢方向。
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
-    var didAutoScroll by remember { mutableStateOf(false) }
-    LaunchedEffect(scrollState.maxValue, nowMinute) {
+    var didAutoScroll by remember(scrollIdentity) { mutableStateOf(false) }
+    LaunchedEffect(scrollIdentity, scrollState.maxValue, nowMinute) {
         val target = nowMinute ?: return@LaunchedEffect
         if (didAutoScroll || scrollState.maxValue == 0) return@LaunchedEffect
         val offsetPx = with(density) { (yOf(target) - SCROLL_LEAD_IN).toPx() }
@@ -154,6 +159,13 @@ fun DayTimeline(
                     weight = if (showActualTrack) PLAN_TRACK_WEIGHT else 1f,
                     dashedLeftEdge = true,
                 ) {
+                    blockers.forEach { blocker ->
+                        BlockerBlock(
+                            blocker = blocker,
+                            y = yOf(blocker.startMinute),
+                            height = heightOf(blocker.startMinute, blocker.endMinute),
+                        )
+                    }
                     // 时段重叠的任务并排画，互不遮挡；不重叠时照旧独占整轨
                     val lanes = remember(segments) {
                         TaskLanes.assign(segments.map { Span(it.startMinute, it.endMinute) })
@@ -188,6 +200,97 @@ fun DayTimeline(
             nowMinute?.takeIf { it in startHour * 60 until endHour * 60 }?.let { now ->
                 CurrentTimeLine(minute = now, y = yOf(now))
             }
+        }
+    }
+}
+
+/** 占位事件：占住计划轨的时间，但不进入专注结算，也不能点击编辑。 */
+@Composable
+private fun BlockerBlock(blocker: BlockerEntity, y: Dp, height: Dp) {
+    Row(
+        modifier = Modifier
+            .offset(y = y)
+            .height(height)
+            .fillMaxWidth()
+            .padding(horizontal = CiSpacing.xs)
+            .clip(CiShapes.taskBlock)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.taskBlock),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(CiSizes.blockAccent)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outline)
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = CiSpacing.xs, vertical = CiSpacing.xxs),
+            verticalArrangement = Arrangement.Top,
+        ) {
+            Text(
+                text = blocker.title.ifBlank { "不可安排" },
+                style = CiTextStyles.blockTitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "占位 · 不进入结算",
+                style = CiTextStyles.blockCaption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** 用并排分栏表达重叠，同时把冲突明确写出来，避免只靠颜色或位置猜测。 */
+internal fun timelineConflictCount(segments: List<TaskSegment>): Int =
+    TaskLanes.assign(segments.map { Span(it.startMinute, it.endMinute) })
+        .count { it.laneCount > 1 }
+
+/** 时间线反馈行：锁定、冲突和未安置都是可恢复的正常状态。 */
+@Composable
+internal fun TimelineFeedback(
+    blockers: Int = 0,
+    conflicts: Int = 0,
+    unplaced: List<TaskEntity> = emptyList(),
+    modifier: Modifier = Modifier,
+) {
+    if (blockers == 0 && conflicts == 0 && unplaced.isEmpty()) return
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CiShapes.field)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+    ) {
+        if (blockers > 0) {
+            Text(
+                text = "已锁定 $blockers 个占位时段（不进入结算）",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (conflicts > 0) {
+            Text(
+                text = "有 $conflicts 项任务时间重叠，请点开任务调整",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (unplaced.isNotEmpty()) {
+            Text(
+                text = "有 ${unplaced.size} 项任务未安置：" +
+                    unplaced.joinToString("、") { it.title },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -351,7 +454,7 @@ private fun ActualBlockView(block: ActualBlock, y: Dp, height: Dp, onClick: () -
     val caption = when {
         block.isContinuation -> ""
         block.running -> "专注中…"
-        else -> TimeFormat.duration(block.endMinute - block.startMinute) +
+        else -> block.focus.label + " · " + TimeFormat.duration(block.endMinute - block.startMinute) +
             if (block.rewardCi > 0) " · +${block.rewardCi} CI" else ""
     }
     TaskBlock(
@@ -470,6 +573,7 @@ fun sessionsToBlocks(
         endMinute = slice.endMinute,
         running = session.endAt == null,
         rewardCi = session.rewardCi,
+        focus = session.focus,
         isContinuation = slice.isContinuation,
     )
 }

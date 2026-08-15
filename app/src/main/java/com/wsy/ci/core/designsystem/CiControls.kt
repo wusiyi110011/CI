@@ -3,6 +3,7 @@ package com.wsy.ci.core.designsystem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +31,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -52,8 +55,8 @@ fun <T> CiSegmentedControl(
             .height(CiSizes.segmentedHeight)
             .clip(CiShapes.pill)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(CiSizes.segmentedInset),
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         options.forEach { option ->
@@ -62,19 +65,19 @@ fun <T> CiSegmentedControl(
                 onClick = { onSelect(option) },
                 shape = CiShapes.pill,
                 color = if (isSelected) {
-                    MaterialTheme.colorScheme.surfaceContainerLowest
+                    MaterialTheme.colorScheme.primaryContainer
                 } else {
-                    Color.Transparent
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0f)
                 },
                 contentColor = if (isSelected) {
-                    MaterialTheme.colorScheme.onSurface
+                    MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 shadowElevation = if (isSelected) CiElevation.card else CiElevation.flat,
             ) {
                 Box(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = CiSpacing.xs),
+                    modifier = Modifier.padding(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(text = label(option), style = MaterialTheme.typography.labelLarge)
@@ -94,7 +97,7 @@ fun <T> CiUnderlineTabs(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.lg)) {
             options.forEach { option ->
                 val isSelected = option == selected
                 Column(
@@ -102,7 +105,12 @@ fun <T> CiUnderlineTabs(
                     // 把后面的 Tab 挤出可视区
                     modifier = Modifier
                         .width(IntrinsicSize.Max)
-                        .clickable { onSelect(option) },
+                        .heightIn(min = CiSizes.fieldHeight)
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = { onSelect(option) },
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
@@ -113,14 +121,15 @@ fun <T> CiUnderlineTabs(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        modifier = Modifier.padding(top = CiSpacing.sm, bottom = 10.dp),
+                        modifier = Modifier.padding(top = CiSpacing.sm, bottom = CiSpacing.xs),
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(2.dp)
+                            .height(CiSizes.selectionIndicator)
                             .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0f)
                             )
                     )
                 }
@@ -176,6 +185,7 @@ fun CiTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val resolvedHeight = height.coerceAtLeast(CiSizes.fieldHeight)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -185,15 +195,15 @@ fun CiTextField(
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        modifier = modifier.height(height),
+        modifier = modifier.height(resolvedHeight),
         decorationBox = { innerTextField ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(height)
+                    .height(resolvedHeight)
                     .clip(CiShapes.field)
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
+                    .border(CiSizes.border, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
                     .padding(horizontal = CiSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
@@ -260,15 +270,16 @@ fun CiDropdownField(
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 240.dp,
+    width: Dp = CiSizes.dropdownWidth,
 ) {
     Row(
         modifier = modifier
             .width(width)
+            .heightIn(min = CiSizes.fieldHeight)
             .clip(CiShapes.field)
-            .border(1.dp, MaterialTheme.colorScheme.outline, CiShapes.field)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = CiSpacing.xs),
+            .border(CiSizes.border, MaterialTheme.colorScheme.outline, CiShapes.field)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

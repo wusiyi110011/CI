@@ -1,5 +1,7 @@
 package com.wsy.ci.feature.settings
 
+import androidx.annotation.DrawableRes
+import com.wsy.ci.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -26,6 +28,23 @@ enum class LocalModelServiceState {
     INFERENCING,
 }
 
+/** 一次性动作（文字/图片测试）反馈的性质，用于区分伙伴头像该表现成功还是错误。 */
+enum class LocalModelActionFeedback {
+    SUCCESS,
+    ERROR,
+}
+
+/** 精灵女巫伙伴头像的七种状态，映射自下载/服务/动作反馈的组合。 */
+enum class AiCompanionState {
+    UNINSTALLED,
+    DORMANT,
+    STARTING,
+    AVAILABLE,
+    INFERENCING,
+    SUCCESS,
+    ERROR,
+}
+
 /** 设置页展示所需的最小本地模型信息，不依赖具体下载器或推理库。 */
 data class LocalModelUiState(
     val modelName: String = "Compound 本地模型",
@@ -36,7 +55,44 @@ data class LocalModelUiState(
     val downloadProgress: Float = 0f,
     val serviceState: LocalModelServiceState = LocalModelServiceState.OFF,
     val errorMessage: String? = null,
-)
+    val actionFeedback: LocalModelActionFeedback? = null,
+) {
+    /**
+     * 成功/错误是一次性动作反馈，优先于常驻的安装/服务状态；FAILED 的下载也算错误。
+     * 其余下载中间态（排队/下载/校验/暂停）沿用「未安装」头像，没有专门画像。
+     */
+    val companionState: AiCompanionState get() = when {
+        actionFeedback == LocalModelActionFeedback.ERROR -> AiCompanionState.ERROR
+        actionFeedback == LocalModelActionFeedback.SUCCESS -> AiCompanionState.SUCCESS
+        installState == LocalModelInstallState.FAILED -> AiCompanionState.ERROR
+        serviceState == LocalModelServiceState.STARTING -> AiCompanionState.STARTING
+        serviceState == LocalModelServiceState.INFERENCING -> AiCompanionState.INFERENCING
+        serviceState == LocalModelServiceState.ON -> AiCompanionState.AVAILABLE
+        installState == LocalModelInstallState.INSTALLED -> AiCompanionState.DORMANT
+        else -> AiCompanionState.UNINSTALLED
+    }
+}
+
+@DrawableRes
+fun AiCompanionState.avatarDrawable(): Int = when (this) {
+    AiCompanionState.UNINSTALLED -> R.drawable.ic_ai_local_uninstalled
+    AiCompanionState.DORMANT -> R.drawable.ic_ai_local_dormant
+    AiCompanionState.STARTING -> R.drawable.ic_ai_local_starting
+    AiCompanionState.AVAILABLE -> R.drawable.ic_ai_local_available
+    AiCompanionState.INFERENCING -> R.drawable.ic_ai_local_inferencing
+    AiCompanionState.SUCCESS -> R.drawable.ic_ai_local_success
+    AiCompanionState.ERROR -> R.drawable.ic_ai_local_error
+}
+
+fun AiCompanionState.label(): String = when (this) {
+    AiCompanionState.UNINSTALLED -> "未安装"
+    AiCompanionState.DORMANT -> "休眠"
+    AiCompanionState.STARTING -> "启动中"
+    AiCompanionState.AVAILABLE -> "可用"
+    AiCompanionState.INFERENCING -> "推理中"
+    AiCompanionState.SUCCESS -> "成功"
+    AiCompanionState.ERROR -> "错误"
+}
 
 /**
  * 本地模型下载/服务适配层。

@@ -25,12 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +49,7 @@ import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
+import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiUnderlineTabs
 import com.wsy.ci.core.economy.Economy
@@ -78,17 +80,17 @@ fun QuestScreen(
     viewModel: QuestViewModel = viewModel(),
     onNavigateToToday: () -> Unit = {},
 ) {
-    val quests by viewModel.quests.collectAsState()
-    val domains by viewModel.domains.collectAsState()
-    val allTasks by viewModel.allTasks.collectAsState()
-    val message by viewModel.message.collectAsState()
-    val routeGen by viewModel.routeGen.collectAsState()
-    val importPending by viewModel.importPending.collectAsState()
-    val importResult by viewModel.importResult.collectAsState()
-    val selectedQuestId by viewModel.selectedQuestId.collectAsState()
-    val questTasks by viewModel.questTasks.collectAsState()
-    val running by viewModel.runningSession.collectAsState()
-    val batchAssign by viewModel.batchAssign.collectAsState()
+    val quests by viewModel.quests.collectAsStateWithLifecycle()
+    val domains by viewModel.domains.collectAsStateWithLifecycle()
+    val allTasks by viewModel.allTasks.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val routeGen by viewModel.routeGen.collectAsStateWithLifecycle()
+    val importPending by viewModel.importPending.collectAsStateWithLifecycle()
+    val importResult by viewModel.importResult.collectAsStateWithLifecycle()
+    val selectedQuestId by viewModel.selectedQuestId.collectAsStateWithLifecycle()
+    val questTasks by viewModel.questTasks.collectAsStateWithLifecycle()
+    val running by viewModel.runningSession.collectAsStateWithLifecycle()
+    val batchAssign by viewModel.batchAssign.collectAsStateWithLifecycle()
 
     // 进行中与完成/归档分屏展示：完成的仍要能点开回看，所以两份都来自同一个全量流
     val activeQuests = quests.filter { it.status == QuestStatus.ACTIVE }
@@ -143,47 +145,49 @@ fun QuestScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
+            CiScreenHeader(
+                title = "任务",
+                subtitle = "把成长拆成可执行的学习线",
+                trailing = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
+                            CiFunctionIcon(
+                                resourceId = R.drawable.ic_ci_ai_schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
+                            Text(
+                                "AI 生成学习路线",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(start = CiSpacing.xs),
+                            )
+                        }
+                        OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                            CiFunctionIcon(
+                                resourceId = R.drawable.ic_ci_import,
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
+                            Text(
+                                "导入 JSON 计划",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(start = CiSpacing.xs),
+                            )
+                        }
+                    }
+                },
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 CiUnderlineTabs(
                     options = QuestTab.entries,
                     selected = tab,
                     label = { it.label },
                     onSelect = { tab = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Row(
-                    modifier = Modifier.padding(bottom = CiSpacing.xs),
-                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-                ) {
-                    OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
-                        CiFunctionIcon(
-                            resourceId = R.drawable.ic_ci_ai_schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(CiSizes.compactIcon),
-                        )
-                        Text(
-                            "AI 生成学习路线",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(start = CiSpacing.xs),
-                        )
-                    }
-                    OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
-                        CiFunctionIcon(
-                            resourceId = R.drawable.ic_ci_import,
-                            contentDescription = null,
-                            modifier = Modifier.size(CiSizes.compactIcon),
-                        )
-                        Text(
-                            "导入 JSON 计划",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(start = CiSpacing.xs),
-                        )
-                    }
-                }
             }
 
             when (tab) {
@@ -690,9 +694,10 @@ private fun IconAction(
         resourceId = icon,
         contentDescription = contentDescription,
         modifier = Modifier
-            .size(CiSizes.actionIcon)
+            .size(CiSizes.fieldHeight)
+            .clip(CiShapes.pill)
             .clickable(onClick = onClick)
-            .padding(2.dp),
+            .padding(CiSizes.iconTouchPadding),
     )
 }
 

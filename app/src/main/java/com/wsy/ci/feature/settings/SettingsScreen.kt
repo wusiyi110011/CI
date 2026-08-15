@@ -1,16 +1,21 @@
 package com.wsy.ci.feature.settings
 
 import android.net.ConnectivityManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -27,10 +32,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,12 +46,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.R
 import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiDropdownField
 import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
+import com.wsy.ci.core.designsystem.CiLedgerSection
 import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiShapes
@@ -53,12 +61,21 @@ import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.settings.ThemeMode
+import com.wsy.ci.core.settings.MotionMode
 import com.wsy.ci.llm.LlmEndpoints
 import com.wsy.ci.llm.LlmSettings
 import com.wsy.ci.llm.LlmTaskType
 
 /** API Key 卡高度，见逐屏布局规格第 6 节。 */
 private val KEY_CARD_HEIGHT: Dp = 180.dp
+
+private enum class SettingsPane(val label: String) {
+    APPEARANCE("外观"),
+    CLOUD("云端端点"),
+    LOCAL("本地模型"),
+    BACKUP("数据备份"),
+    ROUTING("模型路由"),
+}
 
 @Composable
 fun SettingsScreen(
@@ -68,15 +85,16 @@ fun SettingsScreen(
 ) {
     val localController = localModelController ?: remember { InMemoryLocalModelController() }
     val dataBackupController = backupController ?: remember { InMemoryBackupController() }
-    val localModel by localController.state.collectAsState()
-    val backupState by dataBackupController.state.collectAsState()
+    val localModel by localController.state.collectAsStateWithLifecycle()
+    val backupState by dataBackupController.state.collectAsStateWithLifecycle()
     val backupBusy = backupState.backingUp ||
         backupState.importingId != null || backupState.deletingId != null
-    val keyConfigured by viewModel.keyConfigured.collectAsState()
-    val routes by viewModel.routes.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
-    val message by viewModel.message.collectAsState()
-    val testing by viewModel.testing.collectAsState()
+    val keyConfigured by viewModel.keyConfigured.collectAsStateWithLifecycle()
+    val routes by viewModel.routes.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val motionMode by viewModel.motionMode.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val testing by viewModel.testing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     var confirmMetered by remember { mutableStateOf(false) }
@@ -84,11 +102,18 @@ fun SettingsScreen(
     var showBackups by remember { mutableStateOf(false) }
     var confirmRestoreId by remember { mutableStateOf<String?>(null) }
     var confirmDeleteBackupId by remember { mutableStateOf<String?>(null) }
+    var selectedPane by rememberSaveable { mutableStateOf(SettingsPane.APPEARANCE) }
     val requestDownload = {
         if (context.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered) {
             confirmMetered = true
         } else {
             localController.download(false)
+        }
+    }
+    val openBackupList = {
+        if (!backupBusy) {
+            dataBackupController.refresh()
+            showBackups = true
         }
     }
 
@@ -110,63 +135,112 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(CiSpacing.lg)
-                .verticalScroll(rememberScrollState()),
+                .padding(CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
-            CiScreenHeader(title = "设置", subtitle = "API Key 仅存本机 Keystore 加密存储")
-
-            AppearanceCard(current = themeMode, onSelect = viewModel::setThemeMode)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
-                KeyCard(
-                    name = "DeepSeek",
-                    detail = "V4 Pro 复杂推理 / V4 Flash 轻量任务共用",
-                    configured = keyConfigured[LlmEndpoints.KEY_DEEPSEEK] == true,
-                    testing = testing,
-                    onSave = { viewModel.saveKey(LlmEndpoints.KEY_DEEPSEEK, it) },
-                    onTest = { viewModel.testEndpoint(LlmEndpoints.DEEPSEEK_FLASH.id) },
-                    modifier = Modifier.weight(1f),
-                )
-                KeyCard(
-                    name = "MiMo 小米",
-                    detail = "V2.5 视觉理解",
-                    configured = keyConfigured[LlmEndpoints.KEY_MIMO] == true,
-                    testing = testing,
-                    onSave = { viewModel.saveKey(LlmEndpoints.KEY_MIMO, it) },
-                    onTest = { viewModel.testEndpoint(LlmEndpoints.MIMO.id) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            LocalModelAndBackupCard(
-                state = localModel,
-                backupState = backupState,
-                onDownload = requestDownload,
-                onPause = localController::pauseDownload,
-                onResume = requestDownload,
-                onCancelDownload = localController::cancelDownload,
-                onDelete = { confirmDelete = true },
-                onStart = localController::startService,
-                onStop = localController::stopService,
-                onTest = localController::testInference,
-                onTestVision = localController::testVision,
-                onCancelInference = localController::cancelInferenceAndStop,
-                onBackup = dataBackupController::createBackup,
-                onOpenImport = {
-                    if (!backupBusy) {
-                        dataBackupController.refresh()
-                        showBackups = true
-                    }
+            CiScreenHeader(
+                title = "设置",
+                subtitle = "API Key 仅存本机 Keystore 加密存储",
+                trailing = {
+                    CiChip(
+                        text = "本地优先",
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                 },
             )
 
-            RouteTableCard(
-                routes = routes,
-                localInstalled = localModel.installState == LocalModelInstallState.INSTALLED,
-                onSelect = viewModel::setRoute,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+            ) {
+                SettingsMenu(
+                    selected = selectedPane,
+                    onSelect = { selectedPane = it },
+                    modifier = Modifier.width(CiSizes.settingsMenuWidth).fillMaxHeight(),
+                )
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
+                ) {
+                    when (selectedPane) {
+                        SettingsPane.APPEARANCE -> AppearanceCard(
+                            currentTheme = themeMode,
+                            currentMotion = motionMode,
+                            onSelectTheme = viewModel::setThemeMode,
+                            onSelectMotion = viewModel::setMotionMode,
+                        )
+                        SettingsPane.CLOUD -> {
+                            SettingsSectionTitle(
+                                title = "云端端点",
+                                detail = "Key 仅保存于本机加密存储，连接测试不会改动任务路由。",
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
+                                KeyCard(
+                                    name = "DeepSeek",
+                                    detail = "V4 Pro 复杂推理 / V4 Flash 轻量任务共用",
+                                    configured = keyConfigured[LlmEndpoints.KEY_DEEPSEEK] == true,
+                                    testing = testing,
+                                    onSave = { viewModel.saveKey(LlmEndpoints.KEY_DEEPSEEK, it) },
+                                    onTest = { viewModel.testEndpoint(LlmEndpoints.DEEPSEEK_FLASH.id) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                KeyCard(
+                                    name = "MiMo 小米",
+                                    detail = "V2.5 视觉理解",
+                                    configured = keyConfigured[LlmEndpoints.KEY_MIMO] == true,
+                                    testing = testing,
+                                    onSave = { viewModel.saveKey(LlmEndpoints.KEY_MIMO, it) },
+                                    onTest = { viewModel.testEndpoint(LlmEndpoints.MIMO.id) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        SettingsPane.LOCAL -> {
+                            SettingsSectionTitle(
+                                title = "本地模型",
+                                detail = "模型文件与推理服务状态分开管理；服务关闭时不占用内存。",
+                            )
+                            LocalModelAndBackupCard(
+                                state = localModel,
+                                backupState = backupState,
+                                onDownload = requestDownload,
+                                onPause = localController::pauseDownload,
+                                onResume = requestDownload,
+                                onCancelDownload = localController::cancelDownload,
+                                onDelete = { confirmDelete = true },
+                                onStart = localController::startService,
+                                onStop = localController::stopService,
+                                onTest = localController::testInference,
+                                onTestVision = localController::testVision,
+                                onCancelInference = localController::cancelInferenceAndStop,
+                                onBackup = dataBackupController::createBackup,
+                                onOpenImport = openBackupList,
+                                showBackup = false,
+                            )
+                        }
+                        SettingsPane.BACKUP -> {
+                            SettingsSectionTitle(
+                                title = "数据备份",
+                                detail = "仅备份学习数据与普通设置，不包含模型文件和 API Key。",
+                            )
+                            CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
+                                DataBackupSection(
+                                    state = backupState,
+                                    onBackup = dataBackupController::createBackup,
+                                    onOpenImport = openBackupList,
+                                )
+                            }
+                        }
+                        SettingsPane.ROUTING -> RouteTableCard(
+                            routes = routes,
+                            localInstalled = localModel.installState == LocalModelInstallState.INSTALLED,
+                            onSelect = viewModel::setRoute,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
 
         }
     }
@@ -250,6 +324,50 @@ fun SettingsScreen(
     }
 }
 
+@Composable
+private fun SettingsSectionTitle(title: String, detail: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SettingsMenu(
+    selected: SettingsPane,
+    onSelect: (SettingsPane) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CiPanelCard(modifier = modifier, contentPadding = CiSpacing.xs) {
+        SettingsPane.entries.forEach { pane ->
+            val active = pane == selected
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = CiSizes.fieldHeight)
+                    .clip(CiShapes.field)
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                    )
+                    .selectable(selected = active, role = Role.Tab, onClick = { onSelect(pane) })
+                    .padding(horizontal = CiSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = pane.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 /**
  * 本地模型卡。该卡只依赖 [LocalModelController]，下载器和推理服务可在后续模块中替换。
  * 安装与服务两套状态分开呈现，避免「已下载但未启动」与「正在推理」混在一起。
@@ -270,6 +388,7 @@ private fun LocalModelAndBackupCard(
     onCancelInference: () -> Unit,
     onBackup: () -> Unit,
     onOpenImport: () -> Unit,
+    showBackup: Boolean = true,
 ) {
     CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
         Row(
@@ -395,13 +514,14 @@ private fun LocalModelAndBackupCard(
             }
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-        DataBackupSection(
-            state = backupState,
-            onBackup = onBackup,
-            onOpenImport = onOpenImport,
-        )
+        if (showBackup) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            DataBackupSection(
+                state = backupState,
+                onBackup = onBackup,
+                onOpenImport = onOpenImport,
+            )
+        }
     }
 }
 
@@ -538,10 +658,19 @@ private fun BackupListDialog(
     )
 }
 
-/** 外观卡：明暗三选一。跟随系统之外还能手动钉死，夜里看平板不必去改系统设置。 */
+/** 外观账页：主题与动效各自可跟随系统，也允许用户明确覆盖。 */
 @Composable
-private fun AppearanceCard(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
-    CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 20.dp, verticalSpacing = 10.dp) {
+private fun AppearanceCard(
+    currentTheme: ThemeMode,
+    currentMotion: MotionMode,
+    onSelectTheme: (ThemeMode) -> Unit,
+    onSelectMotion: (MotionMode) -> Unit,
+) {
+    CiLedgerSection(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = CiSpacing.lg,
+        verticalSpacing = CiSpacing.sm,
+    ) {
         Column {
             Text("外观", style = MaterialTheme.typography.titleSmall)
             Text(
@@ -552,16 +681,16 @@ private fun AppearanceCard(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
             ThemeMode.entries.forEach { mode ->
-                val selected = mode == current
+                val selected = mode == currentTheme
                 CiChip(
                     text = mode.label,
                     container = if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
+                        MaterialTheme.colorScheme.primaryContainer
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHighest
                     },
                     content = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
+                        MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -569,7 +698,51 @@ private fun AppearanceCard(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                     horizontalPadding = CiSpacing.md,
                     verticalPadding = CiSpacing.xs,
-                    modifier = Modifier.clickable { onSelect(mode) },
+                    modifier = Modifier
+                        .heightIn(min = CiSizes.fieldHeight)
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { onSelectTheme(mode) },
+                        ),
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Column {
+            Text("动效", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "弱动效保留完整结果，以 180ms 淡入替代位移、缩放和叶片展开。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            MotionMode.entries.forEach { mode ->
+                val selected = mode == currentMotion
+                CiChip(
+                    text = mode.label,
+                    container = if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    content = if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    borderColor = if (selected) MaterialTheme.colorScheme.primary else null,
+                    style = MaterialTheme.typography.labelMedium,
+                    horizontalPadding = CiSpacing.md,
+                    verticalPadding = CiSpacing.xs,
+                    modifier = Modifier
+                        .heightIn(min = CiSizes.fieldHeight)
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { onSelectMotion(mode) },
+                        ),
                 )
             }
         }
@@ -591,7 +764,7 @@ private fun KeyCard(
     var revealed by remember { mutableStateOf(false) }
 
     CiPanelCard(
-        modifier = modifier.height(KEY_CARD_HEIGHT),
+        modifier = modifier.heightIn(min = KEY_CARD_HEIGHT),
         contentPadding = 20.dp,
         verticalSpacing = 10.dp,
     ) {
@@ -627,7 +800,6 @@ private fun KeyCard(
             value = input,
             onValueChange = { input = it },
             placeholder = if (configured) "粘贴新 Key 可覆盖" else "粘贴 API Key",
-            height = 44.dp,
             visualTransformation = if (revealed) {
                 VisualTransformation.None
             } else {
@@ -642,10 +814,10 @@ private fun KeyCard(
                     },
                     contentDescription = if (revealed) "隐藏 API Key" else "显示 API Key",
                     modifier = Modifier
-                        .size(CiSizes.actionIcon)
+                        .size(CiSizes.fieldHeight)
                         .clip(CiShapes.pill)
                         .clickable { revealed = !revealed }
-                        .padding(CiSpacing.xxs),
+                        .padding(CiSpacing.sm),
                 )
             },
             modifier = Modifier.fillMaxWidth(),

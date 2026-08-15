@@ -128,9 +128,9 @@ data class CiColors(
                     content = scheme.onSurfaceVariant,
                 ),
                 taskRunning = TaskBlockColors(
-                    container = scheme.tertiaryContainer,
-                    accent = scheme.tertiary,
-                    content = scheme.onTertiaryContainer,
+                    container = scheme.secondaryContainer,
+                    accent = scheme.secondary,
+                    content = scheme.onSecondaryContainer,
                 ),
                 taskDone = TaskBlockColors(
                     container = scheme.secondaryContainer,

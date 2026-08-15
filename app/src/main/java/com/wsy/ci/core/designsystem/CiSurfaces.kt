@@ -1,5 +1,6 @@
 package com.wsy.ci.core.designsystem
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -14,9 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 
-/** 卡片：surfaceContainer 底、圆角 16、elevation 1。 */
+/** 重点轻贴纸片：只用于当前焦点、主线概览、商品与结算等高层级内容。 */
 @Composable
 fun CiPanelCard(
     modifier: Modifier = Modifier,
@@ -27,7 +27,7 @@ fun CiPanelCard(
     Card(
         modifier = modifier,
         shape = CiShapes.card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = CiElevation.card),
     ) {
         Column(
@@ -38,6 +38,25 @@ fun CiPanelCard(
     }
 }
 
+/**
+ * 账页面板：用于时间线、统计、设置和明细，不以阴影制造层层卡片。
+ */
+@Composable
+fun CiLedgerSection(
+    modifier: Modifier = Modifier,
+    contentPadding: Dp = CiSpacing.md,
+    verticalSpacing: Dp = CiSpacing.xs,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .border(CiSizes.border, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
+            .padding(contentPadding),
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+        content = content,
+    )
+}
+
 /** 带标题的统计面板，复盘屏五大面板共用。 */
 @Composable
 fun CiStatPanel(
@@ -45,7 +64,7 @@ fun CiStatPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    CiPanelCard(modifier = modifier, verticalSpacing = CiSpacing.xs) {
+    CiLedgerSection(modifier = modifier, verticalSpacing = CiSpacing.xs) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,
@@ -73,13 +92,13 @@ fun CiScreenHeader(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
         ) {
-            Text(text = title, style = MaterialTheme.typography.headlineSmall)
+            Text(text = title, style = CiTextStyles.pageTitle)
             subtitle?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp),
+                    modifier = Modifier.padding(bottom = CiSpacing.xxs),
                 )
             }
         }

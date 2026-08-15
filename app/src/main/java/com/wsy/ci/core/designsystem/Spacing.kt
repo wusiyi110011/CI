@@ -33,19 +33,24 @@ object CiSpacing {
 
 /** 固定尺寸常量：来自逐屏布局规格，避免散落的魔法数。 */
 object CiSizes {
+    /** 账页分隔线与控件描边。 */
+    val border = 1.dp
+
     /** 左侧 NavigationRail 宽度。 */
-    val navRailWidth = 88.dp
+    val navRailWidth = 104.dp
 
     /** NavigationRail 单项的点击区域边长。 */
-    val navRailItem = 64.dp
+    val navRailItem = 72.dp
 
     /** NavigationRail 图标边长。 */
-    val navRailIcon = 26.dp
-    val navRailAiIcon = 34.dp
+    val navRailIcon = 28.dp
+    val navRailAiIcon = 48.dp
 
     /** 手绘功能图标尺寸：源图留白较多，显示框需略大于普通字形。 */
     val actionIcon = 28.dp
     val compactIcon = 22.dp
+    /** 28dp 图标置于 48dp 触控框时的内边距。 */
+    val iconTouchPadding = 10.dp
     val featureIcon = 48.dp
     val balanceIcon = 42.dp
 
@@ -53,7 +58,7 @@ object CiSizes {
     val timeRulerWidth = 48.dp
 
     /** 进行中计时卡高度。 */
-    val timerCardHeight = 152.dp
+    val timerCardHeight = 176.dp
 
     /** 头部行 / Tab 行高度。 */
     val headerRowHeight = 48.dp
@@ -63,6 +68,16 @@ object CiSizes {
 
     /** 分段控件高度。 */
     val segmentedHeight = 40.dp
+
+    /** 分段控件内缩与选中指示线。 */
+    val segmentedInset = 4.dp
+    val selectionIndicator = 2.dp
+
+    /** 常规下拉选择器宽度。 */
+    val dropdownWidth = 240.dp
+
+    /** 平板设置页左侧分类栏宽度。 */
+    val settingsMenuWidth = 176.dp
 
     /** FAB 边长。 */
     val fab = 56.dp

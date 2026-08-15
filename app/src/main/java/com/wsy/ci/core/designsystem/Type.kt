@@ -7,10 +7,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * 字号层级。字体走系统内置（中文即 Noto Sans SC / PingFang SC），不引入外部字体文件，
- * 因此统一用 [FontFamily.Default]。
+ * 字号层级。正文与标签走系统内置无衬线字体，标题另用系统通用衬线字体；不引入外部字体文件。
  */
 private val CiFontFamily = FontFamily.Default
+private val CiTitleFontFamily = FontFamily.Serif
+private val CiNumericFontFamily = FontFamily.Monospace
 
 /** OpenType 等宽数字特性。计时器、金额、时刻一律套用，避免数字跳动。 */
 private const val TABULAR_NUMS = "tnum"
@@ -24,6 +25,9 @@ private fun ciStyle(size: Int, weight: FontWeight, lineHeight: Int) = TextStyle(
     fontWeight = weight,
     lineHeight = lineHeight.sp,
 )
+
+private fun ciNumericStyle(size: Int, weight: FontWeight, lineHeight: Int) =
+    ciStyle(size, weight, lineHeight).copy(fontFamily = CiNumericFontFamily).tabularNums()
 
 internal val CiTypography = Typography(
     displayLarge = ciStyle(57, FontWeight.Normal, 64),
@@ -45,17 +49,24 @@ internal val CiTypography = Typography(
 
 /** M3 Type Scale 之外的自定义排版 token。 */
 object CiTextStyles {
+    /** 页面标题；使用系统通用衬线字体，保留观察札记般的标题气质。 */
+    val pageTitle: TextStyle = ciStyle(28, FontWeight.SemiBold, 36)
+        .copy(fontFamily = CiTitleFontFamily)
+
+    /** 章节题签；只用于少量标题，不能进入密集列表与表格。 */
+    val sectionTitle: TextStyle = ciStyle(22, FontWeight.SemiBold, 28)
+        .copy(fontFamily = CiTitleFontFamily)
+
     /** 超大展示号，token 表中的 displayJumbo。 */
-    val displayJumbo: TextStyle = ciStyle(96, FontWeight.Light, 104)
+    val displayJumbo: TextStyle = ciNumericStyle(96, FontWeight.Light, 104)
 
     /** 进行中计时卡的主计时器：按设计画布实测值 64sp + 2sp 字距。 */
-    val timer: TextStyle = ciStyle(64, FontWeight.Light, 72)
+    val timer: TextStyle = ciNumericStyle(64, FontWeight.Light, 72)
         .copy(letterSpacing = 2.sp)
-        .tabularNums()
 
     /** 时间线内任务块的标题（比 labelMedium 更紧凑）。 */
     val blockTitle: TextStyle = ciStyle(12, FontWeight.SemiBold, 15)
 
     /** 时间线内任务块的副标题（时刻区间）。 */
-    val blockCaption: TextStyle = ciStyle(10, FontWeight.Normal, 13).tabularNums()
+    val blockCaption: TextStyle = ciNumericStyle(10, FontWeight.Normal, 13)
 }

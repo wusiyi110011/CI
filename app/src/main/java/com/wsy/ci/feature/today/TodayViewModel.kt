@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
+import com.wsy.ci.core.data.ScheduleChangedException
 import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.BlockerEntity
 import com.wsy.ci.core.db.DomainEntity
@@ -21,7 +22,10 @@ import com.wsy.ci.llm.ParsedBlocker
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +64,11 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                 TimeFormat.dayEndMillis(today),
             )
         }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 今日占位事件：和计划共用时间坐标，但不属于可结算任务。 */
+    val blockers: StateFlow<List<BlockerEntity>> = todayEpochDay
+        .flatMapLatest { db.blockerDao().observeByDay(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 今日时间线上的计划片段（含昨天跨过来的尾巴）。 */
@@ -189,12 +198,27 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         data class Diff(
             val results: List<Pair<Long, RescheduleResult>>,
             val lines: List<String>,
-            val inserted: List<BlockerEntity>,
+            val pendingBlockers: List<BlockerEntity>,
+            /** 应用前各受影响任务的完整快照，用于短时撤销。 */
+            val originalTasks: List<TaskEntity> = emptyList(),
         ) : NlState
         data class Error(val message: String) : NlState
     }
 
     val nlState = MutableStateFlow<NlState>(NlState.Idle)
+
+    /**
+     * 最近一次重排的短时撤销入口。只保存在内存里，不增加 Room 字段；
+     * 快照里保留完整任务实体，故位置和状态都能原样恢复。
+     */
+    data class UndoSchedule(
+        val beforeTasks: List<TaskEntity>,
+        val appliedTasks: List<TaskEntity>,
+        val insertedBlockers: List<BlockerEntity>,
+    )
+
+    val undoSchedule = MutableStateFlow<UndoSchedule?>(null)
+    private var undoExpiryJob: Job? = null
 
     fun parseNl(text: String) {
         if (text.isBlank()) return
@@ -207,48 +231,102 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 确认插入占位事件并生成各受影响日期的重排 diff。 */
+    /** 确认占位事件并生成各受影响日期的重排 diff，实际插入延迟到应用阶段。 */
     fun confirmBlockers(parsed: List<ParsedBlocker>) {
         viewModelScope.launch {
             val schedule = container.scheduleRepository
             val entities = parsed.mapNotNull { it.toEntityOrNull() }
+                .distinctBy { Triple(it.epochDay, it.startMinute, it.endMinute to it.title) }
             if (entities.isEmpty()) {
                 nlState.value = NlState.Error("时间段无法解析，请换个说法")
                 return@launch
             }
-            val inserted = entities.map { e ->
-                e.copy(id = schedule.addBlocker(e))
-            }
-            val days = inserted.map { it.epochDay }.distinct().sorted()
+            val days = entities.map { it.epochDay }.distinct().sorted()
             val results = mutableListOf<Pair<Long, RescheduleResult>>()
             val lines = mutableListOf<String>()
+            val originalTasks = mutableListOf<TaskEntity>()
             for (day in days) {
-                val (result, original) = schedule.previewReschedule(day)
+                val (result, original) = schedule.previewReschedule(day, entities)
                 results.add(day to result)
+                originalTasks += original
                 lines.addAll(
                     schedule.describeDiff(result, original)
                         .map { "${TimeFormat.shortDate(day)} $it" }
                 )
             }
-            if (lines.isEmpty()) lines.add("占位已记录，现有任务无需移动")
-            nlState.value = NlState.Diff(results, lines, inserted)
+            if (lines.isEmpty()) lines.add("确认后将记录占位，现有任务无需移动")
+            nlState.value = NlState.Diff(
+                results = results,
+                lines = lines,
+                pendingBlockers = entities,
+                originalTasks = originalTasks.distinctBy { it.id },
+            )
         }
     }
 
     fun applyDiff(diff: NlState.Diff) {
+        if (!nlState.compareAndSet(diff, NlState.Loading)) return
         viewModelScope.launch {
-            diff.results.forEach { (_, result) ->
-                container.scheduleRepository.applyReschedule(result)
+            try {
+                val appliedTasks = diff.results.flatMap { it.second.tasks }.distinctBy { it.id }
+                val insertedBlockers = container.scheduleRepository.applyReschedules(
+                    results = diff.results.map { it.second },
+                    pendingBlockers = diff.pendingBlockers,
+                    expectedBeforeTasks = diff.originalTasks,
+                )
+                // 只在事务成功后暴露撤销入口，且保存实际写入的 blocker 主键。
+                val snapshot = UndoSchedule(
+                    beforeTasks = diff.originalTasks,
+                    appliedTasks = appliedTasks,
+                    insertedBlockers = insertedBlockers,
+                )
+                // 数据写入完成后才把动作暴露给 UI，避免 Snackbar 先于时间线刷新出现。
+                offerUndo(snapshot)
+                nlState.value = NlState.Idle
+                CiWidgetUpdater.updateAll(getApplication())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: ScheduleChangedException) {
+                nlState.value = NlState.Error("计划已发生变化，请重新预览后再应用")
+            } catch (_: Exception) {
+                nlState.value = NlState.Error("调整应用失败，原计划未改变")
             }
-            nlState.value = NlState.Idle
+        }
+    }
+
+    /** 在短时窗口内恢复重排前的任务和本次新增 blocker。 */
+    fun undoLastReschedule() {
+        viewModelScope.launch {
+            val snapshot = undoSchedule.value ?: return@launch
+            undoExpiryJob?.cancel()
+            undoSchedule.value = null
+            container.scheduleRepository.undoReschedule(
+                beforeTasks = snapshot.beforeTasks,
+                appliedTasks = snapshot.appliedTasks,
+                insertedBlockers = snapshot.insertedBlockers,
+            )
             CiWidgetUpdater.updateAll(getApplication())
         }
     }
 
-    /** 放弃：撤销刚插入的占位事件。 */
-    fun cancelDiff(diff: NlState.Diff) {
+    /** Snackbar 被动关闭时清掉撤销入口，避免旧操作再次被误用。 */
+    fun dismissUndo() {
+        undoExpiryJob?.cancel()
+        undoSchedule.value = null
+    }
+
+    private fun offerUndo(snapshot: UndoSchedule) {
+        undoExpiryJob?.cancel()
+        undoSchedule.value = snapshot
+        undoExpiryJob = viewModelScope.launch {
+            delay(UNDO_WINDOW_MILLIS)
+            undoSchedule.value = null
+        }
+    }
+
+    /** 放弃预览：尚未落库，因此只关闭预览。 */
+    fun cancelDiff() {
         viewModelScope.launch {
-            diff.inserted.forEach { container.scheduleRepository.removeBlocker(it) }
             nlState.value = NlState.Idle
         }
     }
@@ -274,5 +352,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         val m = parts[1].toIntOrNull() ?: return null
         if (h !in 0..23 || m !in 0..59) return null
         return h * 60 + m
+    }
+
+    private companion object {
+        /** Snackbar 的可操作窗口，足够完成一次确认又不会长期保留旧快照。 */
+        const val UNDO_WINDOW_MILLIS = 8_000L
     }
 }

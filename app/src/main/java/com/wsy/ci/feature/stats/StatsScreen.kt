@@ -24,7 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,16 +67,16 @@ private const val CHECKIN_COLUMNS = 10
 
 @Composable
 fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
-    val period by viewModel.period.collectAsState()
-    val recordFilter by viewModel.recordFilter.collectAsState()
-    val domainFilter by viewModel.domainFilter.collectAsState()
-    val mainFilter by viewModel.mainFilter.collectAsState()
-    val sideFilter by viewModel.sideFilter.collectAsState()
-    val activeRecordFilters by viewModel.activeRecordFilters.collectAsState()
-    val data by viewModel.data.collectAsState()
-    val analysis by viewModel.analysis.collectAsState()
-    val analyzing by viewModel.analyzing.collectAsState()
-    val message by viewModel.message.collectAsState()
+    val period by viewModel.period.collectAsStateWithLifecycle()
+    val recordFilter by viewModel.recordFilter.collectAsStateWithLifecycle()
+    val domainFilter by viewModel.domainFilter.collectAsStateWithLifecycle()
+    val mainFilter by viewModel.mainFilter.collectAsStateWithLifecycle()
+    val sideFilter by viewModel.sideFilter.collectAsStateWithLifecycle()
+    val activeRecordFilters by viewModel.activeRecordFilters.collectAsStateWithLifecycle()
+    val data by viewModel.data.collectAsStateWithLifecycle()
+    val analysis by viewModel.analysis.collectAsStateWithLifecycle()
+    val analyzing by viewModel.analyzing.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     /** 明细里点开的那条任务，展示只读任务卡。 */
     var detailRecord by remember { mutableStateOf<TaskRecord?>(null) }
@@ -95,13 +95,41 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
         ) {
             CiScreenHeader(
                 title = "复盘",
+                subtitle = "记录事实，再决定下一轮怎么走",
                 trailing = {
-                    CiSegmentedControl(
-                        options = StatsPeriod.entries,
-                        selected = period,
-                        label = { it.label },
-                        onSelect = viewModel::setPeriod,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        CiSegmentedControl(
+                            options = StatsPeriod.entries,
+                            selected = period,
+                            label = { it.label },
+                            onSelect = viewModel::setPeriod,
+                        )
+                        Button(
+                            onClick = viewModel::analyze,
+                            enabled = !analyzing,
+                            shape = CiShapes.pill,
+                        ) {
+                            if (!analyzing) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_ai_schedule,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                            }
+                            Text(
+                                if (analyzing) "分析中…" else "AI 深度分析",
+                                modifier = if (analyzing) {
+                                    Modifier
+                                } else {
+                                    Modifier.padding(start = CiSpacing.xs)
+                                },
+                            )
+                        }
+                        TextButton(onClick = viewModel::exportCsv) { Text("导出 CSV") }
+                    }
                 },
             )
 
@@ -143,30 +171,6 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                         onRecordClick = { detailRecord = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                        Button(
-                            onClick = viewModel::analyze,
-                            enabled = !analyzing,
-                            shape = CiShapes.pill,
-                        ) {
-                            if (!analyzing) {
-                                CiFunctionIcon(
-                                    resourceId = R.drawable.ic_ci_ai_schedule,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(CiSizes.compactIcon),
-                                )
-                            }
-                            Text(
-                                if (analyzing) "分析中…" else "AI 深度分析",
-                                modifier = if (analyzing) {
-                                    Modifier
-                                } else {
-                                    Modifier.padding(start = CiSpacing.xs)
-                                },
-                            )
-                        }
-                        TextButton(onClick = viewModel::exportCsv) { Text("导出 CSV 到下载目录") }
-                    }
                 }
             }
         }
@@ -201,19 +205,20 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
 /** 面板 1：按领域时间分布。 */
 @Composable
 private fun DomainBarsPanel(d: StatsData, modifier: Modifier = Modifier) {
-    val palette = domainPalette()
     val maxMinutes = d.byDomain.maxOfOrNull { it.minutes }?.coerceAtLeast(1) ?: 1
     CiStatPanel(
         title = "按领域时间分布 · 共 ${TimeFormat.duration(d.totalMinutes)}",
         modifier = modifier,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            d.byDomain.forEachIndexed { index, stat ->
+            d.byDomain.forEach { stat ->
                 LabeledBar(
                     label = stat.name,
                     valueLabel = TimeFormat.duration(stat.minutes),
                     progress = stat.minutes.toFloat() / maxMinutes,
-                    color = palette[index % palette.size],
+                    // 领域颜色来自 DomainEntity.colorArgb，未分类由统计层提供兜底色；
+                    // 不按排行轮换颜色，避免同一领域在周期切换后变色。
+                    color = Color(stat.colorArgb and 0xFFFF_FFFFL),
                 )
             }
         }
@@ -446,12 +451,3 @@ private fun HeatCell(
         }
     }
 }
-
-/** 领域条形图的配色轮转，全部取自 ColorScheme。 */
-@Composable
-private fun domainPalette(): List<Color> = listOf(
-    MaterialTheme.colorScheme.primary,
-    MaterialTheme.colorScheme.tertiary,
-    MaterialTheme.colorScheme.secondary,
-    MaterialTheme.colorScheme.outline,
-)

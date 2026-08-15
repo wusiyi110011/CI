@@ -20,6 +20,20 @@ enum class ThemeMode(val label: String) {
     }
 }
 
+/** 动效偏好：跟随系统，也允许明确开启标准动效或切换为弱动效。 */
+enum class MotionMode(val label: String) {
+    SYSTEM("跟随系统"),
+    FULL("标准动效"),
+    REDUCED("弱动效"),
+    ;
+
+    fun reduceMotion(systemReduced: Boolean): Boolean = when (this) {
+        SYSTEM -> systemReduced
+        FULL -> false
+        REDUCED -> true
+    }
+}
+
 /**
  * 与 LLM 无关的本机偏好（普通 SharedPreferences，无敏感数据）。
  *
@@ -32,14 +46,23 @@ class AppSettings(context: Context) {
     private val _themeMode = MutableStateFlow(readThemeMode())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    private val _motionMode = MutableStateFlow(readMotionMode())
+    val motionMode: StateFlow<MotionMode> = _motionMode.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
         _themeMode.value = mode
     }
 
+    fun setMotionMode(mode: MotionMode) {
+        prefs.edit().putString(KEY_MOTION_MODE, mode.name).apply()
+        _motionMode.value = mode
+    }
+
     /** 导入数据备份后重新读取磁盘偏好，并立即刷新界面主题。 */
     fun reload() {
         _themeMode.value = readThemeMode()
+        _motionMode.value = readMotionMode()
     }
 
     /** 存的是枚举名；万一读到旧值或脏值，退回跟随系统而不是崩掉。 */
@@ -48,7 +71,13 @@ class AppSettings(context: Context) {
         return ThemeMode.entries.firstOrNull { it.name == raw } ?: ThemeMode.SYSTEM
     }
 
+    private fun readMotionMode(): MotionMode {
+        val raw = prefs.getString(KEY_MOTION_MODE, null) ?: return MotionMode.SYSTEM
+        return MotionMode.entries.firstOrNull { it.name == raw } ?: MotionMode.SYSTEM
+    }
+
     private companion object {
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_MOTION_MODE = "motion_mode"
     }
 }

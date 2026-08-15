@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +48,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wsy.ci.CiApp
 import com.wsy.ci.R
+import com.wsy.ci.core.db.BlockerEntity
 import com.wsy.ci.core.db.DomainEntity
+import com.wsy.ci.core.db.QuestStatus
+import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
@@ -63,11 +66,15 @@ import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import com.wsy.ci.core.timeline.TaskSegment
+import com.wsy.ci.core.scheduler.Scheduler
+import com.wsy.ci.core.scheduler.Slot
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.feature.today.DayTimeline
+import com.wsy.ci.feature.today.TimelineFeedback
 import com.wsy.ci.feature.today.TaskDetailDialog
 import com.wsy.ci.feature.today.TaskEditorDialog
 import com.wsy.ci.feature.today.sessionsToBlocks
+import com.wsy.ci.feature.today.timelineConflictCount
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.DayOfWeek
@@ -76,6 +83,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -104,9 +112,48 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             .observeByTimeRange(TimeFormat.dayStartMillis(it - 1), TimeFormat.dayEndMillis(it))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** 所选日占位事件：在日视图和共享时间线中都占住对应时段。 */
+    val dayBlockers = selectedDay.flatMapLatest { db.blockerDao().observeByDay(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val weekTasks = selectedDay.flatMapLatest {
         val start = weekStart(it)
         db.taskDao().observeByRange(start - 1, start + 6)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 周视图的占位事件按日期归组，保持锁定语义不因切换视图丢失。 */
+    val weekBlockers = selectedDay.flatMapLatest { day ->
+        val start = weekStart(day)
+        combine(*(0..6).map { offset ->
+            db.blockerDao().observeByDay(start + offset)
+        }.toTypedArray()) { values ->
+            (0..6).associate { offset -> start + offset to values[offset] }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val quests = db.questDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * 按与 ScheduleRepository.previewReschedule 相同的规则预估未安置任务。
+     * 特别补上主线截止日，否则日程页的预览顺序会和 AI 重排确认结果不一致。
+     */
+    val unplacedTasks = combine(dayTasks, dayBlockers, quests, selectedDay) { tasks, blockers, quests, day ->
+        val nowMinute = if (day == LocalDate.now().toEpochDay()) {
+            LocalTime.now().let { it.hour * 60 + it.minute }
+        } else {
+            null
+        }
+        Scheduler.reschedule(
+            tasks = tasks.filter { it.epochDay == day },
+            blockers = blockers.map { Slot(it.startMinute, it.endMinute) },
+            nowMinute = nowMinute,
+            deadlineByQuestId = quests
+                .asSequence()
+                .filter { it.type == QuestType.MAIN && it.status == QuestStatus.ACTIVE }
+                .mapNotNull { quest -> quest.deadlineEpochDay?.let { quest.id to it } }
+                .toMap(),
+        ).unplaced
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 所选月份每日专注分钟（月热力图）。 */
@@ -119,9 +166,6 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val domains = db.domainDao().observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val quests = db.questDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 有进行中的专注时不允许再开一个，任务详情里据此禁用「开始专注」。 */
@@ -201,14 +245,17 @@ private val WEEKDAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "�
 
 @Composable
 fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
-    val selectedDay by viewModel.selectedDay.collectAsState()
-    val dayTasks by viewModel.dayTasks.collectAsState()
-    val daySessions by viewModel.daySessions.collectAsState()
-    val weekTasks by viewModel.weekTasks.collectAsState()
-    val monthSessions by viewModel.monthMinutes.collectAsState()
-    val domains by viewModel.domains.collectAsState()
-    val quests by viewModel.quests.collectAsState()
-    val running by viewModel.runningSession.collectAsState()
+    val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
+    val dayTasks by viewModel.dayTasks.collectAsStateWithLifecycle()
+    val daySessions by viewModel.daySessions.collectAsStateWithLifecycle()
+    val dayBlockers by viewModel.dayBlockers.collectAsStateWithLifecycle()
+    val weekTasks by viewModel.weekTasks.collectAsStateWithLifecycle()
+    val weekBlockers by viewModel.weekBlockers.collectAsStateWithLifecycle()
+    val unplacedTasks by viewModel.unplacedTasks.collectAsStateWithLifecycle()
+    val monthSessions by viewModel.monthMinutes.collectAsStateWithLifecycle()
+    val domains by viewModel.domains.collectAsStateWithLifecycle()
+    val quests by viewModel.quests.collectAsStateWithLifecycle()
+    val running by viewModel.runningSession.collectAsStateWithLifecycle()
 
     var mode by remember { mutableStateOf(CalendarMode.DAY) }
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
@@ -255,25 +302,54 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
 
         Box(modifier = Modifier.weight(1f)) {
             when (mode) {
-                CalendarMode.DAY -> DayTimeline(
-                    segments = DaySegments.tasksOn(dayTasks, selectedDay),
-                    actuals = sessionsToBlocks(
-                        sessions = daySessions,
-                        tasks = dayTasks,
-                        nowMillis = System.currentTimeMillis(),
-                        epochDay = selectedDay,
-                    ),
-                    onTaskClick = { detailTask = it },
-                    nowMinute = nowMinuteIfToday(selectedDay),
-                    showActualTrack = false,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                CalendarMode.WEEK -> WeekGrid(
-                    weekStartDay = LocalDate.ofEpochDay(selectedDay).with(DayOfWeek.MONDAY).toEpochDay(),
-                    tasks = weekTasks,
-                    onTaskClick = { detailTask = it },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                CalendarMode.DAY -> {
+                    val daySegments = DaySegments.tasksOn(dayTasks, selectedDay)
+                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        TimelineFeedback(
+                            blockers = dayBlockers.size,
+                            conflicts = timelineConflictCount(daySegments),
+                            unplaced = unplacedTasks,
+                        )
+                        BlockerSummary(dayBlockers)
+                        DayTimeline(
+                            segments = daySegments,
+                            actuals = sessionsToBlocks(
+                                sessions = daySessions,
+                                tasks = dayTasks,
+                                nowMillis = System.currentTimeMillis(),
+                                epochDay = selectedDay,
+                                quests = quests,
+                            ),
+                            blockers = dayBlockers,
+                            onTaskClick = { detailTask = it },
+                            nowMinute = nowMinuteIfToday(selectedDay),
+                            showActualTrack = false,
+                            scrollIdentity = selectedDay,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                }
+                CalendarMode.WEEK -> {
+                    val weekStart = LocalDate.ofEpochDay(selectedDay)
+                        .with(DayOfWeek.MONDAY).toEpochDay()
+                    val weekSegments = (0..6).flatMap { offset ->
+                        DaySegments.tasksOn(weekTasks, weekStart + offset)
+                    }
+                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        TimelineFeedback(
+                            blockers = weekBlockers.values.sumOf { it.size },
+                            conflicts = timelineConflictCount(weekSegments),
+                            unplaced = unplacedTasks,
+                        )
+                        WeekGrid(
+                            weekStartDay = weekStart,
+                            tasks = weekTasks,
+                            blockersByDay = weekBlockers,
+                            onTaskClick = { detailTask = it },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                }
                 CalendarMode.MONTH -> MonthHeatmap(
                     selectedDay = selectedDay,
                     sessions = monthSessions,
@@ -305,7 +381,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
 
     detailTask?.let { task ->
         val focusedMinutes by remember(task.id) { viewModel.focusMinutes(task.id) }
-            .collectAsState(initial = 0)
+            .collectAsStateWithLifecycle(initialValue = 0)
         TaskDetailDialog(
             task = task,
             focusedMinutes = focusedMinutes,
@@ -362,10 +438,10 @@ private fun StepButton(
         resourceId = icon,
         contentDescription = contentDescription,
         modifier = Modifier
-            .size(CiSizes.actionIcon)
+            .size(CiSizes.fieldHeight)
             .clip(CiShapes.pill)
             .clickable(onClick = onClick)
-            .padding(CiSpacing.xxs),
+            .padding(CiSizes.iconTouchPadding),
     )
 }
 
@@ -374,6 +450,7 @@ private fun StepButton(
 private fun WeekGrid(
     weekStartDay: Long,
     tasks: List<TaskEntity>,
+    blockersByDay: Map<Long, List<BlockerEntity>> = emptyMap(),
     onTaskClick: (TaskEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -389,8 +466,8 @@ private fun WeekGrid(
     // 与日视图同一套规矩：首次测出滚动范围后把当前时刻带进视野，只滚一次
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
-    var didAutoScroll by remember { mutableStateOf(false) }
-    LaunchedEffect(scrollState.maxValue) {
+    var didAutoScroll by remember(weekStartDay) { mutableStateOf(false) }
+    LaunchedEffect(weekStartDay, scrollState.maxValue) {
         if (didAutoScroll || scrollState.maxValue == 0) return@LaunchedEffect
         val now = java.time.LocalTime.now()
         val y = WEEK_HOUR_HEIGHT * ((now.hour * 60 + now.minute - WEEK_START_HOUR * 60) / 60f)
@@ -450,9 +527,78 @@ private fun WeekGrid(
                                 onClick = { onTaskClick(segment.task) },
                             )
                         }
+                        // 后绘制锁定块，避免与任务重叠时被任务背景完全盖住。
+                        (blockersByDay[day] ?: emptyList()).forEach { blocker ->
+                            WeekBlocker(blocker)
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/** 周视图中的占位事件，与日视图共用锁定/不结算语义。 */
+@Composable
+private fun WeekBlocker(blocker: BlockerEntity) {
+    val minuteHeight = WEEK_HOUR_HEIGHT / 60f
+    val y = minuteHeight * blocker.startMinute
+    val height = (minuteHeight * (blocker.endMinute - blocker.startMinute))
+        .coerceAtLeast(WEEK_MIN_BLOCK_HEIGHT)
+    Row(
+        modifier = Modifier
+            .offset(y = y)
+            .height(height)
+            .fillMaxWidth()
+            .padding(horizontal = CiSpacing.xxs)
+            .clip(CiShapes.weekBlock)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.weekBlock),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outline)
+        )
+        Text(
+            text = blocker.title.ifBlank { "不可安排" },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = CiSpacing.xxs, vertical = CiSpacing.xxs),
+        )
+    }
+}
+
+/** 日视图锁定原因摘要：不拦截任务点击，且在重叠时仍保持 blocker 文案可见。 */
+@Composable
+private fun BlockerSummary(blockers: List<BlockerEntity>) {
+    if (blockers.isEmpty()) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CiShapes.field)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+    ) {
+        Text(
+            text = "锁定时段（任务不会安排在这里）",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        blockers.forEach { blocker ->
+            Text(
+                text = "${TimeFormat.minuteOfDay(blocker.startMinute)}–" +
+                    "${TimeFormat.minuteOfDay(blocker.endMinute)} · " +
+                    blocker.title.ifBlank { "不可安排" },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

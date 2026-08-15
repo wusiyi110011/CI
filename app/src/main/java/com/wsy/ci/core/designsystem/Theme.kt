@@ -8,10 +8,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 
 private val LocalCiDarkTheme = staticCompositionLocalOf { false }
+private val LocalCiReducedMotion = staticCompositionLocalOf { false }
 
 @Composable
 fun CiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    reducedMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) CiDarkColorScheme else CiLightColorScheme
@@ -20,6 +22,7 @@ fun CiTheme(
     CompositionLocalProvider(
         LocalCiColors provides ciColors,
         LocalCiDarkTheme provides darkTheme,
+        LocalCiReducedMotion provides reducedMotion,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -37,4 +40,8 @@ object CiTheme {
 
     val isDark: Boolean
         @Composable get() = LocalCiDarkTheme.current
+
+    /** 弱动效下取消位移、缩放与成长路径，只保留 180ms 淡入。 */
+    val reducedMotion: Boolean
+        @Composable get() = LocalCiReducedMotion.current
 }

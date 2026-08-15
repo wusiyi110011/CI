@@ -4,13 +4,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-/** M3 Shape Scale：xs=4 / sm=8 / md=12 / lg=16 / xl=28。 */
+/** M3 Shape Scale：完整设计规范的 10 / 18 / 26dp 语义圆角。 */
 internal val CiShapeScale = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(26.dp),
 )
 
 /** 圆角的语义映射，见设计规格「圆角刻度」一节。 */
@@ -18,32 +18,32 @@ object CiShapes {
     /** 直角 = none(0)。 */
     val none = RoundedCornerShape(0.dp)
 
-    /** 时间线任务块 = sm(8)。 */
-    val taskBlock = RoundedCornerShape(8.dp)
+    /** 时间线任务块 = sm(10)。 */
+    val taskBlock = RoundedCornerShape(10.dp)
 
     /** 周视图任务块，比日视图更紧凑。 */
-    val weekBlock = RoundedCornerShape(6.dp)
+    val weekBlock = RoundedCornerShape(10.dp)
 
-    /** 输入框 / 下拉选择器 = md(12)。 */
-    val field = RoundedCornerShape(12.dp)
+    /** 输入框 / 下拉选择器 = md(18)。 */
+    val field = RoundedCornerShape(18.dp)
 
-    /** 卡片 = lg(16)。 */
-    val card = RoundedCornerShape(16.dp)
+    /** 重点轻贴纸片 = lg(26)。 */
+    val card = RoundedCornerShape(26.dp)
 
-    /** FAB = lg(16)。 */
-    val fab = RoundedCornerShape(16.dp)
+    /** FAB = md(18)。 */
+    val fab = RoundedCornerShape(18.dp)
 
     /** 按钮 / chip / 分段控件 = full。 */
     val pill = RoundedCornerShape(percent = 50)
 
-    /** 对话框 = xl(28)。 */
-    val dialog = RoundedCornerShape(28.dp)
+    /** 对话框 = lg(26)。 */
+    val dialog = RoundedCornerShape(26.dp)
 
     /** 黄金时段热力图格子。 */
-    val heatCell = RoundedCornerShape(2.dp)
+    val heatCell = RoundedCornerShape(10.dp)
 
     /** 每日打卡格子。 */
-    val checkinCell = RoundedCornerShape(3.dp)
+    val checkinCell = RoundedCornerShape(10.dp)
 
     /** 月视图日历格。 */
     val monthCell = RoundedCornerShape(10.dp)

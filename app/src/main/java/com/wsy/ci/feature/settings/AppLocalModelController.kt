@@ -10,13 +10,18 @@ import com.wsy.ci.localmodel.download.LocalModelDownloadStatus
 import com.wsy.ci.localmodel.runtime.LocalModelState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** 一次性动作反馈（女巫头像成功/错误表情）展示多久后回落到常驻状态。 */
+private const val ACTION_FEEDBACK_DURATION_MS = 3_000L
 
 /** 把下载器与 MNN 运行时合并为设置页和导航栏共用的真实控制器。 */
 class AppLocalModelController(
@@ -26,12 +31,26 @@ class AppLocalModelController(
 ) : LocalModelController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val actionMessage = MutableStateFlow<String?>(null)
+    private val actionFeedback = MutableStateFlow<LocalModelActionFeedback?>(null)
+    private var feedbackClearJob: Job? = null
+
+    private fun postActionFeedback(message: String, feedback: LocalModelActionFeedback) {
+        feedbackClearJob?.cancel()
+        actionMessage.value = message
+        actionFeedback.value = feedback
+        feedbackClearJob = scope.launch {
+            delay(ACTION_FEEDBACK_DURATION_MS)
+            actionMessage.value = null
+            actionFeedback.value = null
+        }
+    }
 
     override val state: StateFlow<LocalModelUiState> = combine(
         downloads.state,
         gateway.state,
         actionMessage,
-    ) { download, runtime, message ->
+        actionFeedback,
+    ) { download, runtime, message, feedback ->
         val install = when (download.status) {
             LocalModelDownloadStatus.WAITING_NETWORK -> LocalModelInstallState.WAITING_NETWORK
             LocalModelDownloadStatus.QUEUED -> LocalModelInstallState.QUEUED
@@ -60,6 +79,7 @@ class AppLocalModelController(
             downloadProgress = download.fraction,
             serviceState = service,
             errorMessage = message ?: download.error ?: (runtime as? LocalModelState.Failed)?.error?.message,
+            actionFeedback = feedback,
         )
     }.stateIn(scope, SharingStarted.Eagerly, LocalModelUiState())
 
@@ -76,11 +96,13 @@ class AppLocalModelController(
     }
 
     override fun startService() {
+        feedbackClearJob?.cancel()
         actionMessage.value = null
+        actionFeedback.value = null
         scope.launch {
             val result = gateway.start()
             if (result is com.wsy.ci.localmodel.runtime.LocalModelResult.Failure) {
-                actionMessage.value = result.error.message
+                postActionFeedback(result.error.message, LocalModelActionFeedback.ERROR)
             }
         }
     }
@@ -90,18 +112,17 @@ class AppLocalModelController(
     }
 
     override fun testInference() {
-        actionMessage.value = null
         scope.launch {
-            val result = gateway.smokeTest()
-            actionMessage.value = when (result) {
-                is com.wsy.ci.localmodel.runtime.LocalModelResult.Success -> "本地模型测试成功：${result.content.trim()}"
-                is com.wsy.ci.localmodel.runtime.LocalModelResult.Failure -> result.error.message
+            when (val result = gateway.smokeTest()) {
+                is com.wsy.ci.localmodel.runtime.LocalModelResult.Success ->
+                    postActionFeedback("本地模型测试成功：${result.content.trim()}", LocalModelActionFeedback.SUCCESS)
+                is com.wsy.ci.localmodel.runtime.LocalModelResult.Failure ->
+                    postActionFeedback(result.error.message, LocalModelActionFeedback.ERROR)
             }
         }
     }
 
     override fun testVision() {
-        actionMessage.value = null
         scope.launch {
             val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.ic_ai_local_on)
             val pixels = IntArray(bitmap.width * bitmap.height)
@@ -124,9 +145,11 @@ class AppLocalModelController(
                 )
             )
             bitmap.recycle()
-            actionMessage.value = when (result) {
-                is com.wsy.ci.localmodel.runtime.LocalModelResult.Success -> "图片测试成功：${result.content.trim()}"
-                is com.wsy.ci.localmodel.runtime.LocalModelResult.Failure -> result.error.message
+            when (result) {
+                is com.wsy.ci.localmodel.runtime.LocalModelResult.Success ->
+                    postActionFeedback("图片测试成功：${result.content.trim()}", LocalModelActionFeedback.SUCCESS)
+                is com.wsy.ci.localmodel.runtime.LocalModelResult.Failure ->
+                    postActionFeedback(result.error.message, LocalModelActionFeedback.ERROR)
             }
         }
     }

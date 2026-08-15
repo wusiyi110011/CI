@@ -3,6 +3,7 @@ package com.wsy.ci.feature.today
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -24,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,9 +46,11 @@ import com.wsy.ci.core.designsystem.CiElevation
 import com.wsy.ci.core.designsystem.CiFormDialog
 import com.wsy.ci.core.designsystem.CiFormField
 import com.wsy.ci.core.designsystem.CiFunctionIcon
+import com.wsy.ci.core.designsystem.CiMotion
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
@@ -61,17 +65,32 @@ private fun CiCelebrateDialog(
     accent: Color,
     onDismiss: () -> Unit,
     actionLabel: String,
+    onAction: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val reducedMotion = CiTheme.reducedMotion
+    var contentVisible by remember { mutableStateOf(!reducedMotion) }
+    LaunchedEffect(Unit) { contentVisible = true }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (contentVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (reducedMotion) CiMotion.REDUCED else 0,
+        ),
+        label = "结算淡入",
+    )
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(CiSizes.dialogCelebrateWidth),
+            modifier = Modifier
+                .width(CiSizes.dialogCelebrateWidth)
+                .alpha(contentAlpha),
             shape = CiShapes.dialog,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = CiElevation.celebrate,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                RadiatingRings(color = accent)
+                if (!reducedMotion) {
+                    RadiatingRings(color = accent)
+                }
                 Column(
                     modifier = Modifier.padding(CiSpacing.xl),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -79,7 +98,7 @@ private fun CiCelebrateDialog(
                 ) {
                     content()
                     Button(
-                        onClick = onDismiss,
+                        onClick = onAction ?: onDismiss,
                         shape = CiShapes.pill,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = accent,
@@ -249,7 +268,11 @@ private fun durationMultiplierSuffix(minutes: Int): String {
 }
 
 @Composable
-internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
+internal fun SettlementDialog(
+    settlement: Settlement,
+    onDismiss: () -> Unit,
+    onContinue: (() -> Unit)? = null,
+) {
     val isLevelUp = settlement.newLevel != null
     val accent = if (isLevelUp) {
         MaterialTheme.colorScheme.secondary
@@ -259,7 +282,8 @@ internal fun SettlementDialog(settlement: Settlement, onDismiss: () -> Unit) {
     CiCelebrateDialog(
         accent = accent,
         onDismiss = onDismiss,
-        actionLabel = if (isLevelUp) "继续" else "太棒了",
+        actionLabel = if (isLevelUp) "继续" else if (onContinue != null) "继续下一项" else "太棒了",
+        onAction = onContinue,
     ) {
         Text(
             text = if (isLevelUp) "领域升级" else "专注入账",
@@ -384,7 +408,7 @@ internal fun NlDialogs(state: TodayViewModel.NlState, viewModel: TodayViewModel)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelDiff(state) }) { Text("放弃（撤销占位）") }
+                TextButton(onClick = viewModel::cancelDiff) { Text("放弃预览") }
             },
         )
         is TodayViewModel.NlState.Error -> AlertDialog(

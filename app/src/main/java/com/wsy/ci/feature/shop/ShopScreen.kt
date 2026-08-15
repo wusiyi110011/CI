@@ -3,6 +3,7 @@ package com.wsy.ci.feature.shop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,7 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -110,16 +113,16 @@ private val LedgerType.label: String
 
 @Composable
 fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
-    val items by viewModel.items.collectAsState()
-    val picks by viewModel.picks.collectAsState()
-    val balance by viewModel.balance.collectAsState()
-    val ledger by viewModel.ledger.collectAsState()
-    val purchases by viewModel.purchases.collectAsState()
-    val purchaseFilter by viewModel.purchaseFilter.collectAsState()
-    val message by viewModel.message.collectAsState()
-    val aiPrice by viewModel.aiPrice.collectAsState()
-    val importPending by viewModel.importPending.collectAsState()
-    val importResult by viewModel.importResult.collectAsState()
+    val items by viewModel.items.collectAsStateWithLifecycle()
+    val picks by viewModel.picks.collectAsStateWithLifecycle()
+    val balance by viewModel.balance.collectAsStateWithLifecycle()
+    val ledger by viewModel.ledger.collectAsStateWithLifecycle()
+    val purchases by viewModel.purchases.collectAsStateWithLifecycle()
+    val purchaseFilter by viewModel.purchaseFilter.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val aiPrice by viewModel.aiPrice.collectAsStateWithLifecycle()
+    val importPending by viewModel.importPending.collectAsStateWithLifecycle()
+    val importResult by viewModel.importResult.collectAsStateWithLifecycle()
 
     var tab by remember { mutableStateOf(ShopTab.PICKS) }
     var editing by remember { mutableStateOf<ShopItemEntity?>(null) }
@@ -160,7 +163,11 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
-            CiScreenHeader(title = "商城", trailing = { CiBalanceChip(balance) })
+            CiScreenHeader(
+                title = "商城",
+                subtitle = "把长期投入兑换成真实休息与奖励",
+                trailing = { CiBalanceChip(balance) },
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -212,11 +219,13 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     picks = picks.mapNotNull { pick ->
                         items.firstOrNull { it.id == pick.itemId }?.let { pick to it }
                     },
+                    balance = balance,
                     onBuy = { pick, item -> viewModel.purchase(item.id, pick.id) },
                     modifier = Modifier.weight(1f),
                 )
                 ShopTab.SHELF -> ShelfList(
                     items = items,
+                    balance = balance,
                     onBuy = { viewModel.purchase(it.id) },
                     onEdit = { editing = it },
                     modifier = Modifier.weight(1f),
@@ -265,7 +274,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
         )
     }
 
-    if (showAiInput) {
+    if (showAiInput && aiPrice !is ShopViewModel.AiPriceState.Draft) {
         AiPriceInputDialog(
             loading = aiPrice is ShopViewModel.AiPriceState.Loading,
             onSubmit = viewModel::requestAiPrice,
@@ -275,8 +284,10 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             },
         )
     }
+    LaunchedEffect(aiPrice) {
+        if (aiPrice is ShopViewModel.AiPriceState.Draft) showAiInput = false
+    }
     (aiPrice as? ShopViewModel.AiPriceState.Draft)?.let { draft ->
-        showAiInput = false
         ShopItemEditorDialog(
             initial = draft.item,
             onSave = viewModel::saveItem,
@@ -330,6 +341,7 @@ private fun AiPriceInputDialog(
 @Composable
 private fun DailyPicksWall(
     picks: List<Pair<DailyPickEntity, ShopItemEntity>>,
+    balance: Long,
     onBuy: (DailyPickEntity, ShopItemEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -348,7 +360,7 @@ private fun DailyPicksWall(
         maxItemsInEachRow = PICK_CARDS_PER_ROW,
     ) {
         picks.forEach { (pick, item) ->
-            PickCard(pick, item, onBuy, modifier = Modifier.weight(1f))
+            PickCard(pick, item, balance, onBuy, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -357,10 +369,12 @@ private fun DailyPicksWall(
 private fun PickCard(
     pick: DailyPickEntity,
     item: ShopItemEntity,
+    balance: Long,
     onBuy: (DailyPickEntity, ShopItemEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val quality = CiTheme.colors.quality(item.rarity)
+    val paidPrice = DailyShop.discountedPrice(item.priceCi, pick.discountPercent)
     Card(
         modifier = modifier,
         shape = CiShapes.card,
@@ -401,7 +415,7 @@ private fun PickCard(
                         )
                         Text(
                             text = formatCi(
-                                DailyShop.discountedPrice(item.priceCi, pick.discountPercent)
+                                paidPrice
                             ),
                             style = MaterialTheme.typography.titleLarge.tabularNums(),
                             color = quality.accent,
@@ -418,10 +432,14 @@ private fun PickCard(
                     } else {
                         Button(
                             onClick = { onBuy(pick, item) },
+                            enabled = balance >= paidPrice,
                             shape = CiShapes.pill,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("兑换", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                if (balance >= paidPrice) "兑换" else "余额不足",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
                         }
                     }
                 }
@@ -443,6 +461,7 @@ private fun PickCard(
 @Composable
 private fun ShelfList(
     items: List<ShopItemEntity>,
+    balance: Long,
     onBuy: (ShopItemEntity) -> Unit,
     onEdit: (ShopItemEntity) -> Unit,
     modifier: Modifier = Modifier,
@@ -500,6 +519,7 @@ private fun ShelfList(
                     )
                     Button(
                         onClick = { onBuy(item) },
+                        enabled = balance >= item.priceCi,
                         shape = CiShapes.pill,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -510,7 +530,10 @@ private fun ShelfList(
                             vertical = CiSpacing.xs,
                         ),
                     ) {
-                        Text("兑换", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            if (balance >= item.priceCi) "兑换" else "余额不足",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                     }
                 }
             }
@@ -711,7 +734,13 @@ private fun FilterChipItem(
         },
         style = MaterialTheme.typography.labelMedium,
         borderColor = if (selected) MaterialTheme.colorScheme.onSurface else null,
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .heightIn(min = CiSizes.fieldHeight)
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            ),
     )
 }
 

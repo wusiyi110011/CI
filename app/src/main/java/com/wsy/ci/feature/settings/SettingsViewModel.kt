@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.settings.ThemeMode
+import com.wsy.ci.core.settings.MotionMode
 import com.wsy.ci.llm.LlmEndpoints
 import com.wsy.ci.llm.LlmResult
 import com.wsy.ci.llm.LlmSettings
@@ -21,8 +22,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 外观：跟随系统 / 明亮 / 黑暗。写入后整棵 Compose 树立刻换色。 */
     val themeMode: StateFlow<ThemeMode> = appSettings.themeMode
+    val motionMode: StateFlow<MotionMode> = appSettings.motionMode
 
     fun setThemeMode(mode: ThemeMode) = appSettings.setThemeMode(mode)
+    fun setMotionMode(mode: MotionMode) = appSettings.setMotionMode(mode)
 
     val keyConfigured = MutableStateFlow(loadKeyStates())
     val routes = MutableStateFlow(loadRoutes())

@@ -5,125 +5,127 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 /**
- * 「复利」调色板——方向：账本 A（纸白 + 石墨 + 金铜）+ 夜间账本 + 电青 tertiary。
+ * 「复利」调色板——完整设计规范中的“鼠尾草与日光”及“月光标本室”。
  *
  * 这里是全工程唯一允许出现字面量颜色的地方。其余任何位置一律走
  * [androidx.compose.material3.MaterialTheme.colorScheme] 或 [LocalCiColors]。
  */
 
 /** 持久化领域没有指定颜色时使用的默认 ARGB。 */
-const val DEFAULT_DOMAIN_COLOR_ARGB: Long = 0xFF3F6B35
+const val DEFAULT_DOMAIN_COLOR_ARGB: Long = 0xFF53634B
 
 /** 统计中“未分类”领域使用的 ARGB。 */
-const val UNCLASSIFIED_DOMAIN_COLOR_ARGB: Long = 0xFF9E9E9E
+const val UNCLASSIFIED_DOMAIN_COLOR_ARGB: Long = 0xFF8B8B7D
 
-// ---- 亮色：纸白账本 ----
-private val Graphite = Color(0xFF39362F)
-private val GraphiteOn = Color(0xFFFFFFFF)
-private val GraphiteContainer = Color(0xFFE4DFD1)
-private val GraphiteOnContainer = Color(0xFF221F1A)
+// ---- 亮色：鼠尾草与日光 ----
+private val SageLight = Color(0xFF6A7B61)
+private val SageOnLight = Color(0xFFFFFFFF)
+private val SageContainerLight = Color(0xFFE8ECE2)
+private val SageOnContainerLight = Color(0xFF31332C)
 
-private val BrassLight = Color(0xFFB8863B)
-private val BrassOnLight = Color(0xFFFFFFFF)
-private val BrassContainerLight = Color(0xFFF6E4C1)
-private val BrassOnContainerLight = Color(0xFF4A3512)
+private val DriedGoldLight = Color(0xFFB18449)
+private val DriedGoldOnLight = Color(0xFFFFFFFF)
+private val DriedGoldContainerLight = Color(0xFFF2E3C4)
+private val DriedGoldOnContainerLight = Color(0xFF31332C)
 
-private val TealLight = Color(0xFF3FA9A0)
-private val TealOnLight = Color(0xFFFFFFFF)
-private val TealContainerLight = Color(0xFFCFEEEA)
-private val TealOnContainerLight = Color(0xFF0B3A36)
+private val InfoLight = Color(0xFF6C8584)
+private val InfoOnLight = Color(0xFFFFFFFF)
+private val InfoContainerLight = Color(0xFFDCE7E4)
+private val InfoOnContainerLight = Color(0xFF2B3B3A)
 
-private val ErrorLight = Color(0xFFBA1A1A)
+private val ErrorLight = Color(0xFFAD6150)
 private val ErrorOnLight = Color(0xFFFFFFFF)
-private val ErrorContainerLight = Color(0xFFFFDAD6)
-private val ErrorOnContainerLight = Color(0xFF410002)
+private val ErrorContainerLight = Color(0xFFF4DDD7)
+private val ErrorOnContainerLight = Color(0xFF512219)
 
-private val PaperLight = Color(0xFFF7F3EA)
-private val InkLight = Color(0xFF211F1A)
-private val SurfaceVariantLight = Color(0xFFE9E2D0)
-private val OnSurfaceVariantLight = Color(0xFF4B473C)
-private val OutlineLight = Color(0xFF7C7667)
-private val OutlineVariantLight = Color(0xFFD8D2C0)
-private val InverseSurfaceLight = Color(0xFF34322B)
+private val OatPaperLight = Color(0xFFF8F4EA)
+private val SurfaceLight = Color(0xFFEEE8DA)
+private val InkLight = Color(0xFF31332C)
+private val SurfaceVariantLight = Color(0xFFF3EEE2)
+private val OnSurfaceVariantLight = Color(0xFF606257)
+private val OutlineLight = Color(0xFF8B8B7D)
+private val OutlineVariantLight = Color(0xFFD4CAB7)
+private val InverseSurfaceLight = Color(0xFF31332C)
 
-private val ContainerLowestLight = Color(0xFFFFFFFF)
-private val ContainerLowLight = Color(0xFFF1ECDD)
-private val ContainerLight = Color(0xFFECE5D5)
-private val ContainerHighLight = Color(0xFFE6DFCE)
-private val ContainerHighestLight = Color(0xFFE0D9C8)
+private val ContainerLowestLight = Color(0xFFF8F4EA)
+private val ContainerLowLight = Color(0xFFF3EEE2)
+private val ContainerLight = Color(0xFFEEE8DA)
+private val ContainerHighLight = Color(0xFFE5DDCB)
+private val ContainerHighestLight = Color(0xFFDDD3C0)
 
-// ---- 暗色：夜间账本（深暖石墨，非冷科技灰）----
-private val GraphiteDark = Color(0xFFC9C3B3)
-private val GraphiteOnDark = Color(0xFF201E19)
-private val GraphiteContainerDark = Color(0xFF4A4739)
-private val GraphiteOnContainerDark = Color(0xFFE4DFD1)
+// ---- 暗色：月光标本室 ----
+private val SageDark = Color(0xFFA8B89F)
+private val SageOnDark = Color(0xFF182120)
+private val SageContainerDark = Color(0xFF2D3B39)
+private val SageOnContainerDark = Color(0xFFE8E7DC)
 
-private val BrassDark = Color(0xFFD4AF37)
-private val BrassOnDark = Color(0xFF3A2E05)
-private val BrassContainerDark = Color(0xFF52410C)
-private val BrassOnContainerDark = Color(0xFFF6E4C1)
+private val DriedGoldDark = Color(0xFFC1A36B)
+private val DriedGoldOnDark = Color(0xFF182120)
+private val DriedGoldContainerDark = Color(0xFF3B3324)
+private val DriedGoldOnContainerDark = Color(0xFFE8E7DC)
 
-private val TealDark = Color(0xFF5FC2B9)
-private val TealOnDark = Color(0xFF00372F)
-private val TealContainerDark = Color(0xFF1E4E48)
-private val TealOnContainerDark = Color(0xFFCFEEEA)
+private val InfoDark = Color(0xFF88A9AE)
+private val InfoOnDark = Color(0xFF182120)
+private val InfoContainerDark = Color(0xFF2B3B3C)
+private val InfoOnContainerDark = Color(0xFFE8E7DC)
 
-private val ErrorDark = Color(0xFFFFB4AB)
-private val ErrorOnDark = Color(0xFF690005)
-private val ErrorContainerDark = Color(0xFF93000A)
-private val ErrorOnContainerDark = Color(0xFFFFDAD6)
+private val ErrorDark = Color(0xFFD18A79)
+private val ErrorOnDark = Color(0xFF182120)
+private val ErrorContainerDark = Color(0xFF4C302B)
+private val ErrorOnContainerDark = Color(0xFFF3D8D1)
 
-private val PaperDark = Color(0xFF1C1B18)
-private val InkDark = Color(0xFFE8E4DB)
-private val SurfaceVariantDark = Color(0xFF46443A)
-private val OnSurfaceVariantDark = Color(0xFFC9C3B4)
-private val OutlineDark = Color(0xFF948E7D)
-private val OutlineVariantDark = Color(0xFF46443A)
+private val MoonPaperDark = Color(0xFF182120)
+private val SurfaceDark = Color(0xFF222D2B)
+private val InkDark = Color(0xFFE8E7DC)
+private val SurfaceVariantDark = Color(0xFF273330)
+private val OnSurfaceVariantDark = Color(0xFFBFC5BC)
+private val OutlineDark = Color(0xFF8F9A94)
+private val OutlineVariantDark = Color(0xFF3B4946)
 
-private val ContainerLowestDark = Color(0xFF131210)
-private val ContainerLowDark = Color(0xFF201F1B)
-private val ContainerDark = Color(0xFF24231F)
-private val ContainerHighDark = Color(0xFF2E2D28)
-private val ContainerHighestDark = Color(0xFF393832)
+private val ContainerLowestDark = Color(0xFF182120)
+private val ContainerLowDark = Color(0xFF222D2B)
+private val ContainerDark = Color(0xFF273330)
+private val ContainerHighDark = Color(0xFF32413E)
+private val ContainerHighestDark = Color(0xFF3B4946)
 
 // ---- 自定义语义色的原始值（不占用 M3 角色）----
-private val QualityCommonLight = Color(0xFF8C877B)
-private val QualityCommonContainerLight = Color(0xFFE7E3D6)
-private val QualityLegendaryLight = Color(0xFFC45B3A)
-private val QualityLegendaryContainerLight = Color(0xFFF5DAD0)
+private val QualityCommonLight = Color(0xFF8B8B7D)
+private val QualityCommonContainerLight = Color(0xFFF3EEE2)
+private val QualityLegendaryLight = Color(0xFFAD6150)
+private val QualityLegendaryContainerLight = Color(0xFFF4DDD7)
 
-private val QualityCommonDark = Color(0xFFABA595)
-private val QualityCommonContainerDark = Color(0xFF3A382F)
-private val QualityLegendaryDark = Color(0xFFE2835F)
-private val QualityLegendaryContainerDark = Color(0xFF4A2A1D)
+private val QualityCommonDark = Color(0xFF8F9A94)
+private val QualityCommonContainerDark = Color(0xFF273330)
+private val QualityLegendaryDark = Color(0xFFD18A79)
+private val QualityLegendaryContainerDark = Color(0xFF4C302B)
 
 internal val CiLightColorScheme = lightColorScheme(
-    primary = Graphite,
-    onPrimary = GraphiteOn,
-    primaryContainer = GraphiteContainer,
-    onPrimaryContainer = GraphiteOnContainer,
-    secondary = BrassLight,
-    onSecondary = BrassOnLight,
-    secondaryContainer = BrassContainerLight,
-    onSecondaryContainer = BrassOnContainerLight,
-    tertiary = TealLight,
-    onTertiary = TealOnLight,
-    tertiaryContainer = TealContainerLight,
-    onTertiaryContainer = TealOnContainerLight,
+    primary = SageLight,
+    onPrimary = SageOnLight,
+    primaryContainer = SageContainerLight,
+    onPrimaryContainer = SageOnContainerLight,
+    secondary = DriedGoldLight,
+    onSecondary = DriedGoldOnLight,
+    secondaryContainer = DriedGoldContainerLight,
+    onSecondaryContainer = DriedGoldOnContainerLight,
+    tertiary = InfoLight,
+    onTertiary = InfoOnLight,
+    tertiaryContainer = InfoContainerLight,
+    onTertiaryContainer = InfoOnContainerLight,
     error = ErrorLight,
     onError = ErrorOnLight,
     errorContainer = ErrorContainerLight,
     onErrorContainer = ErrorOnContainerLight,
-    background = PaperLight,
+    background = OatPaperLight,
     onBackground = InkLight,
-    surface = PaperLight,
+    surface = SurfaceLight,
     onSurface = InkLight,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = OnSurfaceVariantLight,
     outline = OutlineLight,
     outlineVariant = OutlineVariantLight,
     inverseSurface = InverseSurfaceLight,
-    inverseOnSurface = PaperLight,
+    inverseOnSurface = OatPaperLight,
     surfaceContainerLowest = ContainerLowestLight,
     surfaceContainerLow = ContainerLowLight,
     surfaceContainer = ContainerLight,
@@ -132,32 +134,32 @@ internal val CiLightColorScheme = lightColorScheme(
 )
 
 internal val CiDarkColorScheme = darkColorScheme(
-    primary = GraphiteDark,
-    onPrimary = GraphiteOnDark,
-    primaryContainer = GraphiteContainerDark,
-    onPrimaryContainer = GraphiteOnContainerDark,
-    secondary = BrassDark,
-    onSecondary = BrassOnDark,
-    secondaryContainer = BrassContainerDark,
-    onSecondaryContainer = BrassOnContainerDark,
-    tertiary = TealDark,
-    onTertiary = TealOnDark,
-    tertiaryContainer = TealContainerDark,
-    onTertiaryContainer = TealOnContainerDark,
+    primary = SageDark,
+    onPrimary = SageOnDark,
+    primaryContainer = SageContainerDark,
+    onPrimaryContainer = SageOnContainerDark,
+    secondary = DriedGoldDark,
+    onSecondary = DriedGoldOnDark,
+    secondaryContainer = DriedGoldContainerDark,
+    onSecondaryContainer = DriedGoldOnContainerDark,
+    tertiary = InfoDark,
+    onTertiary = InfoOnDark,
+    tertiaryContainer = InfoContainerDark,
+    onTertiaryContainer = InfoOnContainerDark,
     error = ErrorDark,
     onError = ErrorOnDark,
     errorContainer = ErrorContainerDark,
     onErrorContainer = ErrorOnContainerDark,
-    background = PaperDark,
+    background = MoonPaperDark,
     onBackground = InkDark,
-    surface = PaperDark,
+    surface = SurfaceDark,
     onSurface = InkDark,
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = OnSurfaceVariantDark,
     outline = OutlineDark,
     outlineVariant = OutlineVariantDark,
     inverseSurface = InkDark,
-    inverseOnSurface = PaperDark,
+    inverseOnSurface = MoonPaperDark,
     surfaceContainerLowest = ContainerLowestDark,
     surfaceContainerLow = ContainerLowDark,
     surfaceContainer = ContainerDark,
