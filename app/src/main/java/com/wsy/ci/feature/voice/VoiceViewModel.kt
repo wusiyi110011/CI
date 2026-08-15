@@ -7,14 +7,18 @@ import com.wsy.ci.CiApp
 import com.wsy.ci.Destination
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.util.TimeFormat
-import com.wsy.ci.core.voice.VoiceCommandParser
-import com.wsy.ci.core.voice.VoiceIntent
-import com.wsy.ci.core.voice.VoiceTarget
-import com.wsy.ci.core.voice.toVoiceIntent
+import com.wsy.ci.core.voice.skill.SkillDestination
+import com.wsy.ci.core.voice.skill.SkillExecutionContext
+import com.wsy.ci.core.voice.skill.SkillInvocation
+import com.wsy.ci.core.voice.skill.SkillOutcome
+import com.wsy.ci.core.voice.skill.SkillPreview
+import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.VoiceSkillRouter
 import com.wsy.ci.llm.LlmParsed
 import com.wsy.ci.llm.LlmTaskType
 import com.wsy.ci.voice.SpeechState
 import com.wsy.ci.voice.androidPinyinOf
+import com.wsy.ci.voice.loadVoiceTargets
 import com.wsy.ci.widget.CiWidgetUpdater
 import java.time.LocalDate
 import kotlinx.coroutines.Job
@@ -24,34 +28,55 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-sealed interface VoiceUiState {
+/** [Destination] 是 internal，这个状态携带它，故整体 internal 不对外暴露。 */
+internal sealed interface VoiceUiState {
     data object Idle : VoiceUiState
     data class Recording(val elapsedMillis: Long, val amplitude: Float, val cancelling: Boolean) : VoiceUiState
     data object Recognizing : VoiceUiState
-    data class Confirm(val text: String, val intent: VoiceIntent) : VoiceUiState
+
+    /** 确认浮层：[invocation] 为 null 即未识别，执行按钮禁用（安全网）。 */
+    data class Confirm(val text: String, val invocation: SkillInvocation?, val preview: SkillPreview?) : VoiceUiState
+
     data class ScheduleResult(val tasks: List<TaskEntity>) : VoiceUiState
+
+    /** 技能执行成功的结果浮层；[navigateTo] 非空时给一个「去 XX」按钮。 */
+    data class SkillResult(
+        val message: String,
+        val navigateTo: Destination? = null,
+        val title: String = "已完成",
+    ) : VoiceUiState
+
     data class Error(val message: String) : VoiceUiState
 }
 
 /**
- * 长按 AI 图标语音指令的状态机：录音 → 整段识别 → 规则解析意图 → 确认 → 执行。
- * 三个场景分派到 [com.wsy.ci.feature.schedule.RescheduleFlow]（记占位/重排，和「一句话调整」
- * 共用同一条 diff 预览 + 撤销链路）和 [com.wsy.ci.voice.VoiceCommandExecutor]（查询 / 开始任务）。
+ * 长按 AI 图标语音指令的状态机：录音 → 整段识别 → 技能路由（规则层优先、LLM 兜底）→ 确认 → 执行。
+ * 执行统一走 `SkillInvocation.skill.execute`，加新能力 = 注册新 skill，这里不再按意图分叉。
  */
 class VoiceViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as CiApp).container
     private val speechEngine = container.speechEngine
-    private val executor = container.voiceCommandExecutor
-
-    private val _uiState = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
-    val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
+    private val router: VoiceSkillRouter = container.voiceSkillRouter
 
     /** 一次性导航事件：语音执行成功后切到对应屏幕，由 CiRoot 收集消费。[Destination] 是 internal，此处跟随。 */
     internal val navigationEvents = MutableSharedFlow<Destination>(extraBufferCapacity = 1)
 
+    private val executionContext = SkillExecutionContext(
+        appContext = getApplication(),
+        db = container.db,
+        timer = container.timerRepository,
+        shop = container.shopRepository,
+        rescheduleFlow = container.rescheduleFlow,
+        updateWidgets = { CiWidgetUpdater.updateAll(getApplication()) },
+    )
+
+    private val _uiState = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
+    internal val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
+
     private var cancelling = false
     private var recordingObserveJob: Job? = null
-    private var cachedCandidates: List<VoiceTarget> = emptyList()
+    private var cachedRuleContext: SkillRuleContext? = null
+    private var executing = false
 
     /** 长按成立时调用：乐观地立即展示录音浮层，prepare/startRecording 的失败会转成 [VoiceUiState.Error]。 */
     fun onVoiceStart() {
@@ -112,63 +137,109 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun resolveIntent(text: String) {
-        cachedCandidates = executor.candidates()
-        var intent = parseText(text)
-        // 规则解析器兜不住，且用户配了 LLM 路由时才多花一次调用；LLM 不可用是正常路径，
-        // 直接把 Unknown 留给用户手改文字，不能报错了事。
-        if (intent is VoiceIntent.Unknown && container.llmService.isAvailable(LlmTaskType.NL_PARSE)) {
-            intent = resolveWithLlm(text) ?: intent
+        val ruleContext = buildRuleContext()
+        cachedRuleContext = ruleContext
+        var invocation = router.matchByRule(text, ruleContext)
+        // 规则层兜不住，且用户配了 LLM 路由时才多花一次调用；LLM 不可用是正常路径，
+        // 直接把 null（未识别）留给用户手改文字，不能报错了事。
+        if (invocation == null && container.llmService.isAvailable(LlmTaskType.NL_PARSE)) {
+            invocation = resolveWithLlm(text, ruleContext)
         }
-        _uiState.value = VoiceUiState.Confirm(text, intent)
+        showConfirm(text, invocation, ruleContext)
     }
 
-    private suspend fun resolveWithLlm(text: String): VoiceIntent? {
-        val parsed = container.llmService.parseVoiceCommand(text, cachedCandidates)
-        return (parsed as? LlmParsed.Ok)?.value?.toVoiceIntent(cachedCandidates, text)
+    private suspend fun resolveWithLlm(text: String, ruleContext: SkillRuleContext): SkillInvocation? {
+        val parsed = container.llmService.parseSkillCall(
+            text = text,
+            skills = container.voiceSkillRegistry.skills,
+            candidates = ruleContext.candidates,
+        )
+        return (parsed as? LlmParsed.Ok)?.value?.let { router.matchFromLlm(it, ruleContext) }
     }
 
-    private fun parseText(text: String): VoiceIntent {
-        val today = LocalDate.now()
-        val nowMinute = TimeFormat.millisToMinuteOfDay(System.currentTimeMillis())
-        return VoiceCommandParser.parse(text, today, nowMinute, cachedCandidates, androidPinyinOf)
+    private fun showConfirm(text: String, invocation: SkillInvocation?, ruleContext: SkillRuleContext) {
+        _uiState.value = VoiceUiState.Confirm(
+            text = text,
+            invocation = invocation,
+            preview = invocation?.let { it.skill.preview(it.args, ruleContext) },
+        )
     }
 
-    /** 确认浮层里手改文字：重新走一遍规则解析器，让意图卡片跟着更新。 */
+    private suspend fun buildRuleContext(): SkillRuleContext = SkillRuleContext(
+        today = LocalDate.now(),
+        nowMinute = TimeFormat.millisToMinuteOfDay(System.currentTimeMillis()),
+        candidates = loadVoiceTargets(container.db),
+        pinyinOf = androidPinyinOf,
+        // 以 open session 为准而不是 RUNNING 状态的任务：自由专注（不挂任务）时也有进行中的 session
+        hasRunningSession = container.db.sessionDao().openSession() != null,
+    )
+
+    /** 确认浮层里手改文字：只重走规则层（快、无网络），让意图卡片跟着更新。 */
     fun onTextEdited(text: String) {
         val current = _uiState.value as? VoiceUiState.Confirm ?: return
-        _uiState.value = current.copy(text = text, intent = parseText(text))
+        val ruleContext = cachedRuleContext ?: return
+        val invocation = router.matchByRule(text, ruleContext)
+        showConfirm(text, invocation, ruleContext)
     }
 
-    fun execute(intent: VoiceIntent) {
+    /** 执行已确认的技能调用：按返回的 [SkillOutcome] 更新 UI 状态、可选触发导航。 */
+    fun execute(invocation: SkillInvocation) {
+        // in-flight 锁：确认浮层上双击「执行」不能并发跑两次（购买会重复扣款、删除会重复执行）
+        if (executing) return
+        executing = true
         viewModelScope.launch {
-            when (intent) {
-                is VoiceIntent.BlockTime -> {
-                    container.rescheduleFlow.confirmBlockers(intent.toParsedBlockers())
-                    _uiState.value = VoiceUiState.Idle
-                    navigationEvents.emit(Destination.TODAY)
+            try {
+                when (val outcome = invocation.skill.execute(invocation.args, executionContext)) {
+                    is SkillOutcome.Done -> handleDone(outcome)
+                    is SkillOutcome.Failed -> fail(outcome.message)
                 }
-                is VoiceIntent.QuerySchedule -> {
-                    val tasks = executor.querySchedule(intent.fromEpochDay, intent.toEpochDay)
-                    _uiState.value = VoiceUiState.ScheduleResult(tasks)
-                }
-                is VoiceIntent.StartTask -> {
-                    executor.startTask(intent.target)
-                        .onSuccess {
-                            CiWidgetUpdater.updateAll(getApplication())
-                            _uiState.value = VoiceUiState.Idle
-                            navigationEvents.emit(Destination.TODAY)
-                        }
-                        .onFailure { fail(it.message ?: "开始失败") }
-                }
-                is VoiceIntent.Unknown -> Unit // 确认浮层已禁用执行按钮，理论上不会走到这
+            } finally {
+                executing = false
             }
         }
+    }
+
+    private suspend fun handleDone(outcome: SkillOutcome.Done) {
+        outcome.scheduleTasks?.let {
+            _uiState.value = VoiceUiState.ScheduleResult(it)
+            return
+        }
+        val destination = outcome.navigateTo?.toDestination()
+        when {
+            // 有结果文案又有跳转：弹结果浮层，给「去 XX」按钮，不静默跳走
+            destination != null && outcome.message.isNotBlank() ->
+                _uiState.value = VoiceUiState.SkillResult(outcome.message, destination, outcome.title)
+            destination != null -> {
+                _uiState.value = VoiceUiState.Idle
+                navigationEvents.emit(destination)
+            }
+            outcome.message.isNotBlank() ->
+                _uiState.value = VoiceUiState.SkillResult(outcome.message, title = outcome.title)
+            else -> _uiState.value = VoiceUiState.Idle
+        }
+    }
+
+    private fun SkillDestination.toDestination(): Destination = when (this) {
+        SkillDestination.TODAY -> Destination.TODAY
+        SkillDestination.CALENDAR -> Destination.CALENDAR
+        SkillDestination.QUEST -> Destination.QUEST
+        SkillDestination.SHOP -> Destination.SHOP
+        SkillDestination.STATS -> Destination.STATS
+        SkillDestination.SETTINGS -> Destination.SETTINGS
     }
 
     fun openCalendar() {
         viewModelScope.launch {
             _uiState.value = VoiceUiState.Idle
             navigationEvents.emit(Destination.CALENDAR)
+        }
+    }
+
+    /** 结果浮层「去 XX」按钮：关浮层并导航到对应页面。 */
+    internal fun navigateTo(destination: Destination) {
+        viewModelScope.launch {
+            _uiState.value = VoiceUiState.Idle
+            navigationEvents.emit(destination)
         }
     }
 

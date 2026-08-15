@@ -20,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.DialogProperties
 import com.wsy.ci.R
+import com.wsy.ci.Destination
 import com.wsy.ci.core.db.TaskEntity
-import com.wsy.ci.core.designsystem.CiChip
 import com.wsy.ci.core.designsystem.CiFormField
 import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiPanelCard
@@ -30,8 +30,7 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.util.TimeFormat
-import com.wsy.ci.core.voice.VoiceIntent
-import com.wsy.ci.core.voice.VoiceTargetKind
+import com.wsy.ci.core.voice.skill.SkillPreview
 
 /**
  * 长按图标录音期间的浮层：无实时文字（sherpa 整段解码没有 partial result），
@@ -65,12 +64,12 @@ fun VoiceRecordingDialog(elapsedMillis: Long, amplitude: Float, cancelling: Bool
     )
 }
 
-/** 识别结果确认浮层：文字可编辑（识别不准时手改），解析出的意图卡片，绝不静默执行。 */
+/** 识别结果确认浮层：文字可编辑（识别不准时手改），通用技能预览卡片，绝不静默执行。 */
 @Composable
 fun VoiceConfirmDialog(
     text: String,
     onTextChange: (String) -> Unit,
-    intent: VoiceIntent,
+    preview: SkillPreview?,
     onExecute: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -93,11 +92,11 @@ fun VoiceConfirmDialog(
                     label = "识别文本",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                VoiceIntentSummaryCard(intent)
+                SkillPreviewCard(preview)
             }
         },
         confirmButton = {
-            Button(onClick = onExecute, shape = CiShapes.pill, enabled = intent !is VoiceIntent.Unknown) {
+            Button(onClick = onExecute, shape = CiShapes.pill, enabled = preview != null) {
                 Text("执行")
             }
         },
@@ -178,7 +177,7 @@ fun VoiceErrorDialog(message: String, onDismiss: () -> Unit) {
 
 /** 按 [VoiceUiState] 在各浮层间切换，`Idle` 时不渲染任何内容。 */
 @Composable
-fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
+internal fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
     when (state) {
         VoiceUiState.Idle -> Unit
         is VoiceUiState.Recording -> VoiceRecordingDialog(state.elapsedMillis, state.amplitude, state.cancelling)
@@ -186,8 +185,8 @@ fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
         is VoiceUiState.Confirm -> VoiceConfirmDialog(
             text = state.text,
             onTextChange = viewModel::onTextEdited,
-            intent = state.intent,
-            onExecute = { viewModel.execute(state.intent) },
+            preview = state.preview,
+            onExecute = { state.invocation?.let(viewModel::execute) },
             onCancel = viewModel::dismiss,
         )
         is VoiceUiState.ScheduleResult -> VoiceScheduleResultDialog(
@@ -195,72 +194,72 @@ fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
             onOpenCalendar = viewModel::openCalendar,
             onDismiss = viewModel::dismiss,
         )
+        is VoiceUiState.SkillResult -> VoiceSkillResultDialog(
+            message = state.message,
+            navigateTo = state.navigateTo,
+            title = state.title,
+            onGo = { state.navigateTo?.let(viewModel::navigateTo) },
+            onDismiss = viewModel::dismiss,
+        )
         is VoiceUiState.Error -> VoiceErrorDialog(message = state.message, onDismiss = viewModel::dismiss)
     }
 }
 
+/** 技能执行成功的结果浮层：[navigateTo] 非空时给「去 XX」按钮。 */
 @Composable
-private fun VoiceIntentSummaryCard(intent: VoiceIntent) {
+private fun VoiceSkillResultDialog(
+    message: String,
+    navigateTo: Destination?,
+    title: String,
+    onGo: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = CiShapes.dialog,
+        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_ai_schedule, contentDescription = null) },
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            if (navigateTo != null) {
+                Button(onClick = onGo, shape = CiShapes.pill) { Text("去${navigateTo.label}") }
+            } else {
+                Button(onClick = onDismiss, shape = CiShapes.pill) { Text("知道了") }
+            }
+        },
+        dismissButton = {
+            if (navigateTo != null) TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+/**
+ * 通用技能预览卡片：标题 + 明细行，`dangerous` 时标题转警示色。
+ * 加新 skill 不再需要改这个文件，预览内容由 skill 自己描述。
+ */
+@Composable
+private fun SkillPreviewCard(preview: SkillPreview?) {
+    val errorColor = MaterialTheme.colorScheme.error
     CiPanelCard {
-        when (intent) {
-            is VoiceIntent.BlockTime -> {
-                IntentKindChip(R.drawable.ic_ci_blocker, "记占位事件")
-                intent.spans.forEach { span ->
-                    Text(
-                        text = "· ${TimeFormat.date(span.epochDay)} " +
-                            "${TimeFormat.minuteOfDay(span.startMinute)}–${TimeFormat.minuteOfDay(span.endMinute)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+        if (preview == null) {
+            Text(
+                text = "没听懂，可以直接改上面的文字再试",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                text = preview.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (preview.dangerous) errorColor else MaterialTheme.colorScheme.onSurface,
+            )
+            preview.lines.forEach { line ->
                 Text(
-                    text = intent.reason,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            is VoiceIntent.QuerySchedule -> {
-                IntentKindChip(R.drawable.ic_ci_schedule, "查看日程")
-                val from = TimeFormat.date(intent.fromEpochDay)
-                val to = TimeFormat.date(intent.toEpochDay)
-                Text(
-                    text = if (intent.fromEpochDay == intent.toEpochDay) from else "$from ~ $to",
+                    text = "· $line",
                     style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            is VoiceIntent.StartTask -> {
-                IntentKindChip(R.drawable.ic_ci_focus_timer, "开始专注")
-                Text(
-                    text = "${intent.target.kind.label()} · ${intent.target.name}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            is VoiceIntent.Unknown -> {
-                IntentKindChip(R.drawable.ic_ci_warning, "没听懂")
-                Text(
-                    text = "可以直接改上面的文字再试",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
     }
-}
-
-@Composable
-private fun IntentKindChip(icon: Int, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CiChip(
-            text = label,
-            container = MaterialTheme.colorScheme.tertiaryContainer,
-            content = MaterialTheme.colorScheme.onTertiaryContainer,
-            leadingIcon = icon,
-            modifier = Modifier.padding(bottom = CiSpacing.xxs),
-        )
-    }
-}
-
-private fun VoiceTargetKind.label(): String = when (this) {
-    VoiceTargetKind.TASK -> "任务"
-    VoiceTargetKind.QUEST -> "主线/支线"
-    VoiceTargetKind.DOMAIN -> "领域"
 }

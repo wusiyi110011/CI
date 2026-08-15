@@ -36,6 +36,8 @@ class TimerService : Service() {
                 scope.launch {
                     val session = app().container.timerRepository.startSession(taskId, questId)
                     startForeground(NOTIFICATION_ID, buildNotification(title, session.startAt))
+                    // 写库完成后再刷小组件，调用方不用各自处理「服务异步写库」的竞态
+                    CiWidgetUpdater.updateAll(this@TimerService)
                 }
             }
             ACTION_STOP -> {

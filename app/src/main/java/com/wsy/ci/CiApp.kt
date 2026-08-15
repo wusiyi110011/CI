@@ -7,6 +7,24 @@ import com.wsy.ci.core.data.TimerRepository
 import com.wsy.ci.core.backup.DataBackupManager
 import com.wsy.ci.core.db.CiDatabase
 import com.wsy.ci.core.settings.AppSettings
+import com.wsy.ci.core.voice.skill.SkillRegistry
+import com.wsy.ci.core.voice.skill.VoiceSkillRouter
+import com.wsy.ci.core.voice.skill.skills.AbandonTimerSkill
+import com.wsy.ci.core.voice.skill.skills.ArchiveQuestSkill
+import com.wsy.ci.core.voice.skill.skills.BlockTimeSkill
+import com.wsy.ci.core.voice.skill.skills.CompleteQuestSkill
+import com.wsy.ci.core.voice.skill.skills.CompleteTaskSkill
+import com.wsy.ci.core.voice.skill.skills.DeleteQuestSkill
+import com.wsy.ci.core.voice.skill.skills.DeleteTaskSkill
+import com.wsy.ci.core.voice.skill.skills.NavigateSkill
+import com.wsy.ci.core.voice.skill.skills.PurchaseItemSkill
+import com.wsy.ci.core.voice.skill.skills.QueryDomainSkill
+import com.wsy.ci.core.voice.skill.skills.QueryScheduleSkill
+import com.wsy.ci.core.voice.skill.skills.QueryShopSkill
+import com.wsy.ci.core.voice.skill.skills.RestoreQuestSkill
+import com.wsy.ci.core.voice.skill.skills.SkipTaskSkill
+import com.wsy.ci.core.voice.skill.skills.StartTimerSkill
+import com.wsy.ci.core.voice.skill.skills.StopTimerSkill
 import com.wsy.ci.feature.settings.AppLocalModelController
 import com.wsy.ci.feature.settings.AppDataBackupController
 import com.wsy.ci.llm.LlmRouter
@@ -23,7 +41,6 @@ import com.wsy.ci.localmodel.runtime.LocalModelController
 import com.wsy.ci.feature.schedule.RescheduleFlow
 import com.wsy.ci.voice.SherpaSpeechEngine
 import com.wsy.ci.voice.SpeechEngine
-import com.wsy.ci.voice.VoiceCommandExecutor
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.work.DailyRefreshWorker
 import kotlinx.coroutines.CoroutineScope
@@ -75,7 +92,33 @@ class AppContainer(app: Application) {
         scope = appScope,
         onApplied = { CiWidgetUpdater.updateAll(app) },
     )
-    val voiceCommandExecutor = VoiceCommandExecutor(db, timerRepository)
+
+    /**
+     * 语音技能注册表：登记顺序即规则匹配优先级。执行依赖（Context/repo）不在这里注入，
+     * 由 `VoiceViewModel` 组装成 [com.wsy.ci.core.voice.skill.SkillExecutionContext]。
+     * 加新语音能力 = 写一个 AppSkill + 在这里登记一行。
+     */
+    val voiceSkillRegistry = SkillRegistry(
+        listOf(
+            StartTimerSkill,
+            CompleteTaskSkill,
+            CompleteQuestSkill,
+            StopTimerSkill,
+            AbandonTimerSkill,
+            SkipTaskSkill,
+            DeleteTaskSkill,
+            ArchiveQuestSkill,
+            RestoreQuestSkill,
+            DeleteQuestSkill,
+            QueryShopSkill,
+            PurchaseItemSkill,
+            QueryDomainSkill,
+            QueryScheduleSkill,
+            BlockTimeSkill,
+            NavigateSkill,
+        )
+    )
+    val voiceSkillRouter = VoiceSkillRouter(voiceSkillRegistry)
 }
 
 class CiApp : Application() {
