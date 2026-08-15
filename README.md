@@ -125,9 +125,11 @@ domains → quests → tasks → sessions → ledger
 
 如果本机路径不同，请替换命令中的路径。
 
+Gradle 构建前还需要让 Android 插件找到 SDK：在仓库根目录创建 `local.properties` 写入 `sdk.dir=<你的SDK路径>`（Android Studio 打开项目时会自动生成），或设置 `ANDROID_HOME` 环境变量。`local.properties` 已加入 `.gitignore`，不会误提交。
+
 ## 构建与测试
 
-首次 clone 后需先拉取语音识别用的 sherpa-onnx AAR（不在 Maven Central，走 GitHub Release 分发）：
+首次 clone 后需先拉取语音识别用的 sherpa-onnx AAR（不在 Maven Central，走 GitHub Release 分发）。脚本优先用 curl 直连 GitHub CDN，失败时自动改用 `gh release download`（需要已安装 gh CLI 并登录）：
 
 ```bash
 voice/fetch_sherpa.sh
