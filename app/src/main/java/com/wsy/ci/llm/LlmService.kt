@@ -16,6 +16,7 @@
 
 package com.wsy.ci.llm
 
+import android.util.Log
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.Rarity
 import com.wsy.ci.core.voice.VoiceTarget
@@ -205,9 +206,10 @@ class LlmService(private val gateway: LlmGateway) {
     /**
      * 复盘分析（M4）：两期对比摘要 → 结构化洞察/风险/建议。
      *
-     * 语言指令按「三明治」钉三遍（system 首句、尾句、user 末尾）——本地小模型
-     * 对埋在中段的指令遵循很弱，这是实测最有效的写法；输出走 JSON 而非自由文本，
-     * 小模型往字段里填中文时语言也更稳。
+     * 语言约束靠两层：指令按「三明治」钉三遍（system 首句、尾句、user 末尾），
+     * 再放一个中文输出样板——真机实测小模型对指令的遵循时好时坏（同 prompt
+     * 一轮中文一轮英文），但对样板的模仿稳定得多。样板内容刻意与真实复盘
+     * 无关，防照抄。整体结构塌掉时由 [ReviewAnalysisParser] 兜底。
      */
     suspend fun analyzeStats(digest: String): LlmParsed<ReviewAnalysis> {
         val system = """
@@ -216,22 +218,28 @@ class LlmService(private val gateway: LlmGateway) {
             insights：最重要的洞察，基于本期与上期的变化而非罗列数字，2~4 条；
             risks：风险与可能的归因，0~3 条；
             actions：下周的具体可执行建议，具体到可以直接照做，2~3 条。
-            只输出 JSON，不要任何解释，格式：
-            {"insights":["…"],"risks":["…"],"actions":["…"]}
-            再次强调：全部内容必须使用简体中文。
+            只输出 JSON，不要任何解释，输出必须严格模仿下面这个样板的格式与语言：
+            {"insights":["本期总投入比上期下降三成，缺口集中在工作日晚上。","某领域的投入翻倍，是本期最大的进步。"],"risks":["连续两天空白会让打卡断签。"],"actions":["下周一到周五每晚八点半各安排四十五分钟专注。"]}
+            再次强调：所有字段的值都必须使用简体中文。
         """.trimIndent()
         val user = "$digest\n请全程使用简体中文回答。"
         return when (val result = gateway.complete(LlmTaskType.REVIEW_ANALYSIS, system, user)) {
             is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
-            is LlmResult.Success -> try {
-                val parsed = json.decodeFromString<ReviewAnalysis>(extractJson(result.content))
+            is LlmResult.Success -> {
+                // 小模型的坏输出只有看到原文才能修：围栏、think 泄漏、token 截断各有各的相
+                Log.i(TAG, "复盘原始输出（${result.content.length} 字符）：\n${result.content}")
+                val parsed = try {
+                    json.decodeFromString<ReviewAnalysis>(extractJson(result.content))
+                } catch (e: Exception) {
+                    // 整体结构塌掉（实测：数组没闭合就写下一个键）走容错提取
+                    Log.w(TAG, "标准 JSON 解析失败，改用容错提取：${e.message?.take(200)}")
+                    ReviewAnalysisParser.parse(result.content)
+                }
                 if (parsed.insights.isEmpty() && parsed.risks.isEmpty() && parsed.actions.isEmpty()) {
                     LlmParsed.Err("模型未返回有效内容，请重试")
                 } else {
                     LlmParsed.Ok(parsed)
                 }
-            } catch (e: Exception) {
-                LlmParsed.Err("复盘解析失败：${e.message?.take(120)}")
             }
         }
     }
@@ -239,5 +247,7 @@ class LlmService(private val gateway: LlmGateway) {
     private companion object {
         /** 候选清单太长会挤爆 NL_PARSE 的 token 预算，超过这个数就截断。 */
         const val MAX_VOICE_CANDIDATES = 40
+
+        const val TAG = "LlmService"
     }
 }
