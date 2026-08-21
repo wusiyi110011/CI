@@ -46,7 +46,8 @@ data class LocalGenerationOptions(
 val LlmTaskType.localGenerationOptions: LocalGenerationOptions
     get() = when (this) {
         LlmTaskType.ROUTE_GEN -> LocalGenerationOptions(thinking = true, maxTokens = 2048)
-        LlmTaskType.REVIEW_ANALYSIS -> LocalGenerationOptions(thinking = true, maxTokens = 1536)
+        // 复盘关掉思考链：本地小模型的思考链先吃掉大半预算，还容易把正文带成英文
+        LlmTaskType.REVIEW_ANALYSIS -> LocalGenerationOptions(thinking = false, maxTokens = 1536)
         // 语音指令的候选任务清单会塞进 prompt，256 token 装不下，抬到 512。
         LlmTaskType.NL_PARSE -> LocalGenerationOptions(thinking = false, maxTokens = 512)
         LlmTaskType.ITEM_PRICING -> LocalGenerationOptions(thinking = false, maxTokens = 384)

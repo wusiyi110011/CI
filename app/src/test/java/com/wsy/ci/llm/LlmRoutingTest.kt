@@ -45,7 +45,8 @@ class LlmRoutingTest {
     @Test
     fun `任务本地预算符合约定`() {
         assertEquals(LocalGenerationOptions(true, 2048), LlmTaskType.ROUTE_GEN.localGenerationOptions)
-        assertEquals(LocalGenerationOptions(true, 1536), LlmTaskType.REVIEW_ANALYSIS.localGenerationOptions)
+        // 复盘关思考链：本地小模型的思考链吃预算且容易把正文带成英文
+        assertEquals(LocalGenerationOptions(false, 1536), LlmTaskType.REVIEW_ANALYSIS.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 512), LlmTaskType.NL_PARSE.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 384), LlmTaskType.ITEM_PRICING.localGenerationOptions)
         assertEquals(LocalGenerationOptions(false, 256), LlmTaskType.TITLE_GEN.localGenerationOptions)

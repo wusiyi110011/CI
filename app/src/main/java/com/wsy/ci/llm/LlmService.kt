@@ -56,6 +56,14 @@ data class PricedItem(
     val description: String = "",
 )
 
+/** 复盘分析的结构化产出：洞察 / 风险 / 建议，三组各自独立渲染。 */
+@Serializable
+data class ReviewAnalysis(
+    val insights: List<String> = emptyList(),
+    val risks: List<String> = emptyList(),
+    val actions: List<String> = emptyList(),
+)
+
 /**
  * 规则层兜不住时 LLM 裁决出的技能调用：skill 必须命中技能清单，args 交给对应技能的
  * `parseLlmArgs` 做候选校验，编造的 id 在那一关被拒掉。
@@ -194,16 +202,37 @@ class LlmService(private val gateway: LlmGateway) {
         }
     }
 
-    /** 复盘分析（M4）：统计摘要 → 洞察与建议（自由文本）。 */
-    suspend fun analyzeStats(summary: String): LlmParsed<String> {
+    /**
+     * 复盘分析（M4）：两期对比摘要 → 结构化洞察/风险/建议。
+     *
+     * 语言指令按「三明治」钉三遍（system 首句、尾句、user 末尾）——本地小模型
+     * 对埋在中段的指令遵循很弱，这是实测最有效的写法；输出走 JSON 而非自由文本，
+     * 小模型往字段里填中文时语言也更稳。
+     */
+    suspend fun analyzeStats(digest: String): LlmParsed<ReviewAnalysis> {
         val system = """
-            你是学习教练。下面是用户一段时间的学习统计摘要，请给出：
-            1) 三条最重要的洞察（数据说话）；2) 可能的归因；3) 下周的三条具体可执行建议。
-            用简体中文，条理清晰，总字数 300 字以内。
+            你必须全程使用简体中文回答，包括所有 JSON 字段里的值。
+            你是学习教练。根据用户给出的学习统计对比摘要做深度复盘，输出：
+            insights：最重要的洞察，基于本期与上期的变化而非罗列数字，2~4 条；
+            risks：风险与可能的归因，0~3 条；
+            actions：下周的具体可执行建议，具体到可以直接照做，2~3 条。
+            只输出 JSON，不要任何解释，格式：
+            {"insights":["…"],"risks":["…"],"actions":["…"]}
+            再次强调：全部内容必须使用简体中文。
         """.trimIndent()
-        return when (val result = gateway.complete(LlmTaskType.REVIEW_ANALYSIS, system, summary)) {
+        val user = "$digest\n请全程使用简体中文回答。"
+        return when (val result = gateway.complete(LlmTaskType.REVIEW_ANALYSIS, system, user)) {
             is LlmResult.Failure -> LlmParsed.Err(result.message, result.error)
-            is LlmResult.Success -> LlmParsed.Ok(result.content.trim())
+            is LlmResult.Success -> try {
+                val parsed = json.decodeFromString<ReviewAnalysis>(extractJson(result.content))
+                if (parsed.insights.isEmpty() && parsed.risks.isEmpty() && parsed.actions.isEmpty()) {
+                    LlmParsed.Err("模型未返回有效内容，请重试")
+                } else {
+                    LlmParsed.Ok(parsed)
+                }
+            } catch (e: Exception) {
+                LlmParsed.Err("复盘解析失败：${e.message?.take(120)}")
+            }
         }
     }
 

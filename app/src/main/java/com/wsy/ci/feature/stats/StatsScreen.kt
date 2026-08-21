@@ -203,18 +203,44 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
         )
     }
 
-    analysis?.let {
+    analysis?.let { ui ->
         AlertDialog(
             onDismissRequest = {},
             shape = CiShapes.dialog,
-            title = { Text("AI 洞察") },
+            title = { Text("AI 深度分析 · ${ui.granularityLabel}") },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(it) }
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+                ) {
+                    ReviewSection(title = "洞察", entries = ui.result.insights)
+                    ReviewSection(title = "风险与归因", entries = ui.result.risks)
+                    ReviewSection(title = "下周建议", entries = ui.result.actions)
+                }
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.analysis.value = null }) { Text("关闭") }
             },
         )
+    }
+}
+
+/** 复盘弹窗里的一个分区：小标题 + 条目列表；没有内容的分区整段跳过。 */
+@Composable
+private fun ReviewSection(title: String, entries: List<String>) {
+    if (entries.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        entries.forEach { entry ->
+            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                Text(text = "·", style = MaterialTheme.typography.bodyMedium)
+                Text(text = entry, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 

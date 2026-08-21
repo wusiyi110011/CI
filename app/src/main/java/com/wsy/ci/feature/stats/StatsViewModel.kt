@@ -22,13 +22,19 @@ import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
 import com.wsy.ci.core.designsystem.UNCLASSIFIED_DOMAIN_COLOR_ARGB
 import com.wsy.ci.core.db.LedgerType
+import com.wsy.ci.core.db.QuestStatus
 import com.wsy.ci.core.db.QuestType
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.db.TaskStatus
+import com.wsy.ci.core.stats.ReviewDigest
+import com.wsy.ci.core.stats.ReviewMainQuest
+import com.wsy.ci.core.stats.ReviewPeriodSnapshot
+import com.wsy.ci.core.stats.ReviewSideQuest
 import com.wsy.ci.core.stats.sessionMinuteBuckets
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
+import com.wsy.ci.llm.ReviewAnalysis
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +42,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 enum class StatsPeriod(val label: String) { WEEK("本周"), MONTH("本月") }
+
+/** 复盘弹窗的状态：结果连同它对应的对比粒度一起展示。 */
+data class AnalysisUi(val granularityLabel: String, val result: ReviewAnalysis)
+
+/** 复盘摘要里黄金时段取前几个。 */
+private const val REVIEW_TOP_HOURS = 3
 
 data class DomainStat(val name: String, val minutes: Int, val colorArgb: Long)
 
@@ -132,7 +144,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     val sideFilter = MutableStateFlow<QuestFilter>(QuestFilter.All)
     val activeRecordFilters = MutableStateFlow<Set<RecordFilterKind>>(emptySet())
     val data = MutableStateFlow<StatsData?>(null)
-    val analysis = MutableStateFlow<String?>(null)
+    val analysis = MutableStateFlow<AnalysisUi?>(null)
     val analyzing = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
 
@@ -266,28 +278,120 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /** 把统计摘要喂给 LLM 拿洞察（显式按钮触发，可不用）。 */
+    /**
+     * 深度复盘（显式按钮触发，可不用）：本期 vs 上期对比 + 主线进度 + 支线连击，
+     * 由 [ReviewDigest] 拼成摘要喂给 LLM，拿回结构化的洞察/风险/建议。
+     */
     fun analyze() {
-        val d = data.value ?: return
+        if (data.value == null) return
         viewModelScope.launch {
             analyzing.value = true
-            val summary = buildString {
-                appendLine("统计周期：${TimeFormat.shortDate(d.fromDay)} ~ ${TimeFormat.shortDate(d.toDay)}")
-                appendLine("总专注：${TimeFormat.duration(d.totalMinutes)}")
-                appendLine("按领域：${d.byDomain.joinToString { "${it.name} ${it.minutes}分钟" }}")
-                appendLine("任务：计划 ${d.plannedCount} 完成 ${d.doneCount} 跳过 ${d.skippedCount}")
-                appendLine("计划分钟 ${d.plannedMinutes} vs 实际分钟 ${d.actualMinutes}")
-                val bestHours = (0..23).sortedByDescending { h -> d.heat.sumOf { it[h] } }.take(3)
-                appendLine("专注最多的时段：${bestHours.joinToString { "${it}点" }}")
-                appendLine("CI币：入 ${d.earnedCi} 出 ${d.spentCi}")
+            try {
+                val today = LocalDate.now()
+                val label = granularityLabel(period.value)
+                val (curRange, prevRange) = reviewRanges(period.value, today)
+                val current = reviewSnapshot(curRange.first, curRange.second)
+                val previous = reviewSnapshot(prevRange.first, prevRange.second)
+
+                // 主线/支线只报进行中的；本期投入从该期 session 按任务线归组统计
+                val sessions = db.sessionDao()
+                    .byTimeRange(
+                        TimeFormat.dayStartMillis(curRange.first),
+                        TimeFormat.dayEndMillis(curRange.second),
+                    )
+                    .filter { it.endAt != null }
+                val minutesOf = { s: SessionEntity ->
+                    TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
+                }
+                val minutesByQuest = sessions.groupBy { it.questId }
+                    .mapValues { (_, list) -> list.sumOf(minutesOf) }
+                val focusCountByQuest = sessions.groupingBy { it.questId }.eachCount()
+                val quests = db.questDao().observeEvery().first()
+                val mains = quests
+                    .filter { it.type == QuestType.MAIN && it.status == QuestStatus.ACTIVE }
+                    .map { q ->
+                        ReviewMainQuest(
+                            title = q.title,
+                            deadlineEpochDay = q.deadlineEpochDay,
+                            chapterCount = ReviewDigest.chapterCount(q.chaptersJson),
+                            periodMinutes = minutesByQuest[q.id] ?: 0,
+                        )
+                    }
+                val sides = quests
+                    .filter { it.type == QuestType.SIDE && it.status == QuestStatus.ACTIVE }
+                    .map { q ->
+                        ReviewSideQuest(
+                            title = q.title,
+                            streakDays = q.streakDays,
+                            bestStreak = q.bestStreak,
+                            lastDoneEpochDay = q.lastDoneEpochDay,
+                            periodFocusCount = focusCountByQuest[q.id] ?: 0,
+                        )
+                    }
+
+                val digest = ReviewDigest.build(
+                    granularityLabel = label,
+                    todayEpochDay = today.toEpochDay(),
+                    current = current,
+                    previous = previous,
+                    mainQuests = mains,
+                    sideQuests = sides,
+                )
+                when (val r = container.llmService.analyzeStats(digest)) {
+                    is LlmParsed.Ok -> analysis.value = AnalysisUi(label, r.value)
+                    is LlmParsed.Err -> message.value = r.message
+                }
+            } finally {
+                analyzing.value = false
             }
-            when (val r = container.llmService.analyzeStats(summary)) {
-                is LlmParsed.Ok -> analysis.value = r.value
-                is LlmParsed.Err -> message.value = r.message
-            }
-            analyzing.value = false
         }
     }
+
+    /** 复盘的固定粒度：本周 vs 上周 / 本月 vs 上月。上期取完整周期，本期到今天为止。 */
+    private fun reviewRanges(
+        p: StatsPeriod,
+        today: LocalDate,
+    ): Pair<Pair<Long, Long>, Pair<Long, Long>> = when (p) {
+        StatsPeriod.WEEK -> {
+            val monday = today.with(DayOfWeek.MONDAY)
+            (monday.toEpochDay() to today.toEpochDay()) to
+                (monday.minusDays(7).toEpochDay() to monday.minusDays(1).toEpochDay())
+        }
+        StatsPeriod.MONTH -> {
+            val first = today.withDayOfMonth(1)
+            (first.toEpochDay() to today.toEpochDay()) to
+                (first.minusMonths(1).toEpochDay() to first.minusDays(1).toEpochDay())
+        }
+    }
+
+    private fun granularityLabel(p: StatsPeriod): String = when (p) {
+        StatsPeriod.WEEK -> "本周 vs 上周"
+        StatsPeriod.MONTH -> "本月 vs 上月"
+    }
+
+    /** 复用统计屏同一套聚合口径（computeStats），映射成复盘摘要需要的轻量快照。 */
+    private suspend fun reviewSnapshot(fromDay: Long, toDay: Long): ReviewPeriodSnapshot {
+        val d = computeStats(fromDay, toDay)
+        return ReviewPeriodSnapshot(
+            fromDay = fromDay,
+            toDay = toDay,
+            totalMinutes = d.totalMinutes,
+            plannedCount = d.plannedCount,
+            doneCount = d.doneCount,
+            skippedCount = d.skippedCount,
+            minutesByDomain = d.byDomain.map { it.name to it.minutes },
+            topHours = topHours(d.heat),
+            earnedCi = d.earnedCi,
+            spentCi = d.spentCi,
+        )
+    }
+
+    private fun topHours(heat: List<IntArray>): List<Int> =
+        (0..23).map { h -> h to heat.sumOf { it[h] } }
+            .filter { it.second > 0 }
+            .sortedByDescending { it.second }
+            .take(REVIEW_TOP_HOURS)
+            .map { it.first }
 
     /** 导出周期内 sessions 明细 CSV 到系统下载目录。 */
     fun exportCsv() {
