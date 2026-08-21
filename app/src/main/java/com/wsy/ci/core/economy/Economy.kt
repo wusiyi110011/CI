@@ -177,6 +177,16 @@ object Economy {
     /** 升级一次性 CI 币奖励 = 升级后等级 × 100。 */
     fun levelUpReward(newLevel: Int): Long = newLevel * 100L
 
+    /** 主线完结的复利结算利率：按该主线名下累计入账 CI 的一成发利息。 */
+    const val QUEST_INTEREST_RATE = 0.10
+
+    /**
+     * 主线完成的「复利结算」：本金是逐次专注已经领走的 CI 币，完结时按
+     * [QUEST_INTEREST_RATE] 发一笔利息，向下取整。全工程唯一字面意义上的复利。
+     */
+    fun questInterest(totalEarnedCi: Long): Long =
+        if (totalEarnedCi <= 0) 0L else floor(totalEarnedCi * QUEST_INTEREST_RATE).toLong()
+
     /** 商品建议品质：按锚定价格档位划分。 */
     fun suggestRarity(priceCi: Long): Rarity = when {
         priceCi < 500 -> Rarity.COMMON

@@ -147,4 +147,16 @@ class EconomyTest {
         assertEquals(Rarity.EPIC, Economy.suggestRarity(10000))
         assertEquals(Rarity.LEGENDARY, Economy.suggestRarity(10001))
     }
+
+    @Test
+    fun `复利结算是累计入账的一成且向下取整`() {
+        assertEquals(675L, Economy.questInterest(6750))
+        // 1234 × 0.10 = 123.4 → 123
+        assertEquals(123L, Economy.questInterest(1234))
+        assertEquals(0L, Economy.questInterest(0))
+        // 没有收益的主线完结不发负数也不发空账
+        assertEquals(0L, Economy.questInterest(-100))
+        // 9 CI 的利息不足 1，向下取整为 0
+        assertEquals(0L, Economy.questInterest(9))
+    }
 }

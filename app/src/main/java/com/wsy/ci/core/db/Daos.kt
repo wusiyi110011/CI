@@ -182,6 +182,16 @@ interface SessionDao {
     )
     fun observeFocusMillis(taskId: Long): Flow<Long>
 
+    /**
+     * 某条任务线名下全部已结束专注的 CI 入账合计，主线完结发「复利结算」用。
+     * session 上的 questId 是开工那一刻记下的快照，之后换绑任务线的历史专注仍算给旧线。
+     */
+    @Query(
+        "SELECT COALESCE(SUM(rewardCi), 0) FROM sessions " +
+            "WHERE questId = :questId AND endAt IS NOT NULL"
+    )
+    suspend fun earnedCiByQuest(questId: Long): Long
+
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun byId(id: Long): SessionEntity?
 
@@ -215,6 +225,10 @@ interface LedgerDao {
      */
     @Query("SELECT COUNT(*) FROM ledger WHERE type = 'EARN_STREAK' AND refId = :epochDay")
     suspend fun checkinCount(epochDay: Long): Int
+
+    /** 某主线的复利结算是否已发过，DONE↔ACTIVE 反复切换时靠它去重。 */
+    @Query("SELECT COUNT(*) FROM ledger WHERE type = 'EARN_QUEST_DONE' AND refId = :questId")
+    suspend fun questDoneCount(questId: Long): Int
 
     /** 撤回某次专注发出的任务奖励，删记录时用。 */
     @Query("DELETE FROM ledger WHERE type = 'EARN_TASK' AND refId = :sessionId")

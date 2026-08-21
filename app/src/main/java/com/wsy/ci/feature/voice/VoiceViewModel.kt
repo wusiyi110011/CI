@@ -82,6 +82,7 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
         db = container.db,
         timer = container.timerRepository,
         shop = container.shopRepository,
+        quest = container.questRepository,
         rescheduleFlow = container.rescheduleFlow,
         updateWidgets = { CiWidgetUpdater.updateAll(getApplication()) },
     )

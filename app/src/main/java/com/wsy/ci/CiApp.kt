@@ -17,6 +17,7 @@
 package com.wsy.ci
 
 import android.app.Application
+import com.wsy.ci.core.data.QuestRepository
 import com.wsy.ci.core.data.ScheduleRepository
 import com.wsy.ci.core.data.ShopRepository
 import com.wsy.ci.core.data.TimerRepository
@@ -69,6 +70,7 @@ class AppContainer(app: Application) {
     val db: CiDatabase = CiDatabase.get(app)
     val timerRepository = TimerRepository(db)
     val shopRepository = ShopRepository(db)
+    val questRepository = QuestRepository(db)
     val appSettings = AppSettings(app)
     private val dataBackupManager = DataBackupManager(app, db, appSettings::reload)
     val dataBackupController = AppDataBackupController(app, dataBackupManager)

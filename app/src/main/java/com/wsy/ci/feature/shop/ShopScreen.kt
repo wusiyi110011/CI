@@ -123,6 +123,7 @@ private val LedgerType.label: String
         LedgerType.EARN_TASK -> "专注入账"
         LedgerType.EARN_STREAK -> "连击加成"
         LedgerType.EARN_LEVELUP -> "升级奖励"
+        LedgerType.EARN_QUEST_DONE -> "复利结算"
         LedgerType.SPEND_SHOP -> "商城兑换"
         LedgerType.ADJUST -> "手动调整"
     }

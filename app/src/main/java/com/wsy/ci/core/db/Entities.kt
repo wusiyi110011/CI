@@ -123,7 +123,7 @@ data class SessionEntity(
     val expGained: Long = 0,
 )
 
-enum class LedgerType { EARN_TASK, EARN_STREAK, EARN_LEVELUP, SPEND_SHOP, ADJUST }
+enum class LedgerType { EARN_TASK, EARN_STREAK, EARN_LEVELUP, EARN_QUEST_DONE, SPEND_SHOP, ADJUST }
 
 /** CI 币流水账。amount 正为入账、负为支出。 */
 @Entity(tableName = "ledger", indices = [Index("at"), Index("type")])

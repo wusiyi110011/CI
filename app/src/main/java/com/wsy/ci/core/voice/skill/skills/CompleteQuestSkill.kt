@@ -29,7 +29,7 @@ import com.wsy.ci.core.voice.skill.targetIdOrNull
 import com.wsy.ci.core.voice.skill.targetOrNull
 import kotlinx.serialization.json.JsonObject
 
-/** 完成任务线：照抄 `QuestViewModel.completeQuest`（现状不刷新小组件，保持一致）。 */
+/** 完成任务线：与 `QuestViewModel.completeQuest` 共用 [com.wsy.ci.core.data.QuestRepository]（完结不改 task/session 数据，无需刷新小组件）。 */
 object CompleteQuestSkill : AppSkill {
 
     override val id = "complete_quest"
@@ -60,7 +60,9 @@ object CompleteQuestSkill : AppSkill {
         if (quest.status != QuestStatus.ACTIVE) {
             return SkillOutcome.Failed("「${quest.title}」不是进行中状态，无需完成")
         }
-        ctx.db.questDao().update(quest.copy(status = QuestStatus.DONE))
-        return SkillOutcome.Done("「${quest.title}」已完成 🎉")
+        val done = ctx.quest.complete(questId)
+            ?: return SkillOutcome.Failed("任务线已失效，请重新说一次")
+        val interest = if (done.interestCi > 0) "，复利结算 +${done.interestCi} CI" else ""
+        return SkillOutcome.Done("「${done.questTitle}」已完成 🎉$interest")
     }
 }

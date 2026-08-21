@@ -215,7 +215,11 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun completeQuest(quest: QuestEntity) {
-        viewModelScope.launch { db.questDao().update(quest.copy(status = QuestStatus.DONE)) }
+        viewModelScope.launch {
+            val done = container.questRepository.complete(quest.id) ?: return@launch
+            val interest = if (done.interestCi > 0) "，复利结算 +${done.interestCi} CI" else ""
+            message.value = "「${done.questTitle}」已完成 🎉$interest"
+        }
     }
 
     fun archiveQuest(quest: QuestEntity) {

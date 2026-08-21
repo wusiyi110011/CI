@@ -17,6 +17,7 @@
 package com.wsy.ci.core.voice.skill
 
 import android.content.Context
+import com.wsy.ci.core.data.QuestRepository
 import com.wsy.ci.core.data.ShopRepository
 import com.wsy.ci.core.data.TimerRepository
 import com.wsy.ci.core.db.CiDatabase
@@ -84,6 +85,7 @@ class SkillExecutionContext(
     val db: CiDatabase,
     val timer: TimerRepository,
     val shop: ShopRepository,
+    val quest: QuestRepository,
     val rescheduleFlow: RescheduleFlow,
     val updateWidgets: suspend () -> Unit,
 )
