@@ -26,8 +26,10 @@ import com.wsy.ci.core.db.DomainEntity
 import com.wsy.ci.core.db.QuestEntity
 import com.wsy.ci.core.db.SessionEntity
 import com.wsy.ci.core.db.TaskEntity
+import com.wsy.ci.core.db.TaskStatus
 import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.scheduler.RescheduleResult
+import com.wsy.ci.core.scheduler.endedAt
 import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.TaskSegment
 import com.wsy.ci.core.util.TimeFormat
@@ -41,12 +43,50 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/**
+ * 合并两条 Room 查询的计时快照。今日记录已经出现同 id 的已结束记录时，
+ * 即使 open-session 查询还滞留在旧值，也必须以已结束事实为准。
+ */
+internal fun reconcileRunningSession(
+    open: SessionEntity?,
+    rangedSessions: List<SessionEntity>,
+): SessionEntity? {
+    val rangedOpen = rangedSessions.lastOrNull { it.endAt == null }
+    return when {
+        rangedOpen != null -> rangedOpen
+        open != null && rangedSessions.any { it.id == open.id } -> null
+        else -> open
+    }
+}
+
+/** 结束专注后、Room 任务流追上事务前，先把刚提交的状态投影到【今日】。 */
+internal data class TaskStopProjection(
+    val taskId: Long,
+    val status: TaskStatus,
+    val endMinute: Int,
+)
+
+internal fun applyTaskStopProjection(
+    tasks: List<TaskEntity>,
+    projection: TaskStopProjection?,
+): List<TaskEntity> {
+    if (projection == null) return tasks
+    return tasks.map { task ->
+        if (task.id == projection.taskId) {
+            task.copy(status = projection.status, endMinute = projection.endMinute)
+        } else {
+            task
+        }
+    }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
@@ -65,9 +105,17 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
      * 今日时间线的素材。查询多带上昨天：跨零点的任务和专注属于昨天，
      * 但今天要画出它们延续过来的那一段（切片交给 `DaySegments`）。
      */
-    val tasks: StateFlow<List<TaskEntity>> = todayEpochDay
+    private val observedTasks: StateFlow<List<TaskEntity>> = todayEpochDay
         .flatMapLatest { today -> db.taskDao().observeByRange(today - 1, today) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _taskStopProjection = MutableStateFlow<TaskStopProjection?>(null)
+
+    val tasks: StateFlow<List<TaskEntity>> = combine(
+        observedTasks,
+        _taskStopProjection,
+        ::applyTaskStopProjection,
+    ).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val sessions: StateFlow<List<SessionEntity>> = todayEpochDay
         .flatMapLatest { today ->
@@ -89,8 +137,23 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val runningSession: StateFlow<SessionEntity?> = db.sessionDao().observeOpenSession()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    /**
+     * open-session 专用查询与今日实际记录互相校验：事务失效通知偶尔到达顺序不同，
+     * 任一查询先看见「已结束」都应立即收起计时卡，不能继续展示另一个流里的旧快照。
+     */
+    private val observedOpenSession = db.sessionDao().observeOpenSession()
+    val runningSession: StateFlow<SessionEntity?> = combine(
+        observedOpenSession,
+        sessions,
+        ::reconcileRunningSession,
+    ).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * 用户点下专注结果的真实时刻。事务提交前 UI 用它冻结计时，避免结算排队时继续跳秒；
+     * 等 open session 的 Room 流确认变空后再清除，防止提交与失效通知之间闪回旧计时。
+     */
+    private val _stopRequestedAt = MutableStateFlow<Long?>(null)
+    val stopRequestedAt: StateFlow<Long?> = _stopRequestedAt.asStateFlow()
 
     /**
      * 计时中的任务。单独查而不是从 [tasks] 里找：任务线详情和日程屏都能对
@@ -124,20 +187,68 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             container.shopRepository.ensureSeedItems()
             container.shopRepository.ensureTodayPicks()
         }
+        viewModelScope.launch {
+            runningSession.collect { session ->
+                if (session == null) _stopRequestedAt.value = null
+            }
+        }
+        viewModelScope.launch {
+            observedTasks.collect { current ->
+                val projection = _taskStopProjection.value ?: return@collect
+                val task = current.firstOrNull { it.id == projection.taskId } ?: return@collect
+                if (task.status == projection.status && task.endMinute == projection.endMinute) {
+                    _taskStopProjection.value = null
+                }
+            }
+        }
     }
 
     fun startTimer(task: TaskEntity?) {
+        if (_stopRequestedAt.value != null) return
         TimerService.start(getApplication(), task?.id, task?.title ?: "自由专注")
         viewModelScope.launch { CiWidgetUpdater.updateAll(getApplication()) }
     }
 
     /** [note] 为结束弹窗里填的完成描述，可空。 */
     fun stopTimer(focus: FocusOutcome, note: String = "") {
+        val stoppedAt = System.currentTimeMillis()
+        if (!_stopRequestedAt.compareAndSet(expect = null, update = stoppedAt)) return
+        val taskId = runningSession.value?.taskId
+        taskId?.let { id ->
+            tasks.value.firstOrNull { it.id == id }?.let { task ->
+                val ended = endedAt(
+                    task = task,
+                    endEpochDay = TimeFormat.millisToEpochDay(stoppedAt),
+                    endMinute = TimeFormat.millisToMinuteOfDay(stoppedAt),
+                )
+                _taskStopProjection.value = TaskStopProjection(
+                    taskId = id,
+                    status = if (focus == FocusOutcome.ABANDONED) {
+                        TaskStatus.PLANNED
+                    } else {
+                        TaskStatus.DONE
+                    },
+                    endMinute = ended.endMinute,
+                )
+            }
+        }
         viewModelScope.launch {
-            val settlement = container.timerRepository.stopSession(focus, note)
-            lastSettlement.value = settlement
-            TimerService.stop(getApplication())
-            CiWidgetUpdater.updateAll(getApplication())
+            try {
+                val settlement = container.timerRepository.stopSession(
+                    focus = focus,
+                    note = note,
+                    stoppedAtMillis = stoppedAt,
+                )
+                lastSettlement.value = settlement
+                // 返回 null 也表示数据库已确认没有 open session，旧服务同样必须撤掉。
+                TimerService.stop(getApplication())
+                CiWidgetUpdater.updateAll(getApplication())
+                if (settlement == null) _stopRequestedAt.value = null
+            } catch (error: Throwable) {
+                _stopRequestedAt.value = null
+                _taskStopProjection.value = null
+                throw error
+            }
         }
     }
 

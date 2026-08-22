@@ -28,7 +28,7 @@ import com.wsy.ci.widget.TimerService
 import kotlinx.serialization.json.JsonObject
 
 /**
- * 放弃当前专注。`TimerService.ACTION_STOP` 的通知按钮硬编码 COMPLETED，
+ * 放弃当前专注。`TimerService.ACTION_COMPLETE` 的通知按钮固定按完成结算，
  * 不能靠它传放弃语义，所以和 StopTimerSkill 一样走 Repository 直调 + `Service.stop()` 撤通知。
  */
 object AbandonTimerSkill : AppSkill {

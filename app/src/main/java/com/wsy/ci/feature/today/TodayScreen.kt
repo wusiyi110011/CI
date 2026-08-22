@@ -93,6 +93,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val blockers by viewModel.blockers.collectAsStateWithLifecycle()
     val running by viewModel.runningSession.collectAsStateWithLifecycle()
+    val stopRequestedAt by viewModel.stopRequestedAt.collectAsStateWithLifecycle()
     val runningTask by viewModel.runningTask.collectAsStateWithLifecycle()
     val domains by viewModel.domains.collectAsStateWithLifecycle()
     val quests by viewModel.quests.collectAsStateWithLifecycle()
@@ -128,17 +129,20 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
     // 专注中每秒刷新计时；空闲时只需每分钟校准一次当前时刻线。
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(running?.id) {
+    LaunchedEffect(running?.id, stopRequestedAt) {
         while (true) {
             nowTick = System.currentTimeMillis()
-            delay(if (running == null) 60_000 else 1_000)
+            delay(if (running == null || stopRequestedAt != null) 60_000 else 1_000)
         }
     }
+
+    // 点结果的那一刻立即冻结计时；持久化也使用同一个时刻，计划轨与实际轨不会错开。
+    val effectiveNow = stopRequestedAt ?: nowTick
 
     val actualBlocks = sessionsToBlocks(
         sessions = sessions,
         tasks = tasks + listOfNotNull(runningTask),
-        nowMillis = nowTick,
+        nowMillis = effectiveNow,
         epochDay = todayEpochDay,
         quests = quests,
     )
@@ -180,7 +184,8 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                     task = runningTask,
                     quests = quests,
                     domains = domains,
-                    elapsedMillis = nowTick - session.startAt,
+                    elapsedMillis = effectiveNow - session.startAt,
+                    isStopping = stopRequestedAt != null,
                     onStop = { showStopDialog = true },
                 )
             } ?: IdleFocusCard(
@@ -366,6 +371,7 @@ private fun RunningCard(
     quests: List<QuestEntity>,
     domains: List<DomainEntity>,
     elapsedMillis: Long,
+    isStopping: Boolean,
     onStop: () -> Unit,
 ) {
     // 没有具体任务时（对着支线直接打卡），任务线从 session 上取
@@ -405,6 +411,7 @@ private fun RunningCard(
             )
             OutlinedButton(
                 onClick = onStop,
+                enabled = !isStopping,
                 shape = CiShapes.pill,
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
@@ -421,7 +428,7 @@ private fun RunningCard(
                     modifier = Modifier.size(CiSizes.compactIcon),
                 )
                 Text(
-                    "结束",
+                    if (isStopping) "结算中" else "结束",
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(start = CiSpacing.xs),
                 )

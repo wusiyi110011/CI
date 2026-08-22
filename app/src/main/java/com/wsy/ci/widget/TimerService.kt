@@ -56,9 +56,10 @@ class TimerService : Service() {
                     CiWidgetUpdater.updateAll(this@TimerService)
                 }
             }
-            ACTION_STOP -> {
+            ACTION_COMPLETE -> {
                 scope.launch {
                     app().container.timerRepository.stopSession(FocusOutcome.COMPLETED)
+                    CiWidgetUpdater.updateAll(this@TimerService)
                     stopSelfCleanly()
                 }
             }
@@ -86,7 +87,7 @@ class TimerService : Service() {
         )
         val stop = PendingIntent.getService(
             this, 1,
-            Intent(this, TimerService::class.java).setAction(ACTION_STOP),
+            Intent(this, TimerService::class.java).setAction(ACTION_COMPLETE),
             PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -102,6 +103,7 @@ class TimerService : Service() {
     }
 
     override fun onDestroy() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
         scope.cancel()
         super.onDestroy()
     }
@@ -110,7 +112,8 @@ class TimerService : Service() {
         private const val CHANNEL_ID = "focus_timer"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_START = "com.wsy.ci.timer.START"
-        const val ACTION_STOP = "com.wsy.ci.timer.STOP"
+        /** 仅供通知栏的「完成」动作使用：结算当前专注后停止服务。 */
+        const val ACTION_COMPLETE = "com.wsy.ci.timer.COMPLETE"
         const val EXTRA_TASK_ID = "taskId"
         const val EXTRA_QUEST_ID = "questId"
         const val EXTRA_TITLE = "title"
@@ -126,9 +129,9 @@ class TimerService : Service() {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, TimerService::class.java).setAction(ACTION_STOP)
-            )
+            // 应用内、语音和小组件都已经先完成了 Repository 结算；这里只撤掉保活服务。
+            // 不能再发送「完成」动作，否则会排入第二次 stopSession，造成界面与任务延迟同步。
+            context.stopService(Intent(context, TimerService::class.java))
         }
     }
 }

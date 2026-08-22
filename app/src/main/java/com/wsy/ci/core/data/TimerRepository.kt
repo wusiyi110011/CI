@@ -95,10 +95,15 @@ class TimerRepository(private val db: CiDatabase) {
      * [note] 是可选的完成描述：关联了任务就追加进 `task.note`，
      * 自由专注没有任务可写，则落到本次入账的流水备注里，不静默丢弃。
      */
-    suspend fun stopSession(focus: FocusOutcome, note: String = ""): Settlement? {
+    suspend fun stopSession(
+        focus: FocusOutcome,
+        note: String = "",
+        stoppedAtMillis: Long = System.currentTimeMillis(),
+    ): Settlement? {
         return db.withTransaction {
             val session = db.sessionDao().openSession() ?: return@withTransaction null
-            val now = System.currentTimeMillis()
+            // 结束弹窗点击的一刻就是收工时刻。结算协程即使稍后才拿到事务，时长也不应继续增长。
+            val now = stoppedAtMillis.coerceAtLeast(session.startAt)
             val minutes = ((now - session.startAt) / 60_000.0).roundToInt().coerceAtLeast(0)
             val task = session.taskId?.let { db.taskDao().byId(it) }
             val difficulty = task?.difficulty ?: Difficulty.NORMAL
