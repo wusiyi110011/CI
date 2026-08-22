@@ -66,26 +66,38 @@ class LlmSettings(context: Context) : LlmRouteProvider {
     }
 
     /** 解析某任务实际使用的端点；关闭或无 Key 时返回 null（调用方走离线兜底）。 */
-    fun resolveEndpoint(task: LlmTaskType): LlmEndpoint? {
-        val selection = routeSelection(task)
-        val endpoint = when (selection) {
-            LlmRoute.Default -> LlmEndpoints.defaultFor(task.tier)
-            is LlmRoute.Api -> selection.endpoint ?: LlmEndpoints.defaultFor(task.tier)
-            LlmRoute.Local,
-            LlmRoute.Off,
-            is LlmRoute.Invalid -> return null
-        }
-        if (hasKey(endpoint.keyId)) return endpoint
-        // 首选端点没 Key：退到任何一个有 Key 的端点（视觉任务除外，避免发给纯文本模型）
-        if (task.tier == LlmTier.VISION) return null
-        return LlmEndpoints.ALL.firstOrNull { it.id != LlmEndpoints.MIMO.id && hasKey(it.keyId) }
-    }
+    fun resolveEndpoint(task: LlmTaskType): LlmEndpoint? =
+        resolveApiEndpoint(task, routeSelection(task), ::hasKey)
 
     companion object {
         const val ROUTE_OFF = "off"
         const val ROUTE_DEFAULT = "default"
         const val ROUTE_API = "api"
         const val ROUTE_LOCAL = "local"
+    }
+}
+
+/**
+ * 解析 API 端点的纯逻辑。用户显式选中的端点必须严格遵守：缺 Key 就不可用，不能把
+ * 学习内容静默发给另一家供应商。只有默认路由和未指定端点的「API 自动」允许兜底。
+ */
+internal fun resolveApiEndpoint(
+    task: LlmTaskType,
+    selection: LlmRoute,
+    hasKey: (String) -> Boolean,
+): LlmEndpoint? {
+    val endpoint = when (selection) {
+        LlmRoute.Default -> LlmEndpoints.defaultFor(task.tier)
+        is LlmRoute.Api -> selection.endpoint ?: LlmEndpoints.defaultFor(task.tier)
+        LlmRoute.Local,
+        LlmRoute.Off,
+        is LlmRoute.Invalid -> return null
+    }
+    if (hasKey(endpoint.keyId)) return endpoint
+    if (selection is LlmRoute.Api && selection.endpoint != null) return null
+    if (task.tier == LlmTier.VISION) return null
+    return LlmEndpoints.ALL.firstOrNull {
+        it.id != LlmEndpoints.MIMO.id && hasKey(it.keyId)
     }
 }
 

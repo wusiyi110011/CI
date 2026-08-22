@@ -28,6 +28,7 @@ import com.wsy.ci.localmodel.download.LocalModelDownloadManager
 import com.wsy.ci.localmodel.download.LocalModelDownloadStatus
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,10 +95,21 @@ class SherpaSpeechEngine(
         val startedAt = System.currentTimeMillis()
         _state.value = SpeechState.Recording(0L, 0f)
         recordingJob = scope.launch(Dispatchers.IO) {
-            val audio = recorder.record { amplitude ->
-                _state.value = SpeechState.Recording(System.currentTimeMillis() - startedAt, amplitude)
+            try {
+                val audio = recorder.record { amplitude ->
+                    _state.value = SpeechState.Recording(System.currentTimeMillis() - startedAt, amplitude)
+                }
+                deferred.complete(audio)
+            } catch (error: CancellationException) {
+                deferred.cancel(error)
+                throw error
+            } catch (error: Throwable) {
+                deferred.completeExceptionally(error)
+                if (pendingAudio === deferred) {
+                    pendingAudio = null
+                    _state.value = SpeechState.Failed(error.message ?: "无法开始录音")
+                }
             }
-            deferred.complete(audio)
         }
         return Result.success(Unit)
     }
@@ -106,7 +118,11 @@ class SherpaSpeechEngine(
         val deferred = pendingAudio
             ?: return Result.failure(IllegalStateException("尚未开始录音"))
         recorder.stop()
-        val audio = deferred.await()
+        val audio = runCatching { deferred.await() }.getOrElse { error ->
+            pendingAudio = null
+            _state.value = SpeechState.Failed(error.message ?: "录音失败")
+            return Result.failure(error)
+        }
         pendingAudio = null
         if (audio.samples.size < MIN_SAMPLES) {
             _state.value = SpeechState.Ready

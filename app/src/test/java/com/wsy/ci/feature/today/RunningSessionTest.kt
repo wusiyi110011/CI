@@ -72,5 +72,25 @@ class RunningSessionTest {
         assertEquals(625, projected.endMinute)
     }
 
+    @Test
+    fun `补录任务只改任务关联并保留结算归属快照`() {
+        val original = SessionEntity(
+            id = 7,
+            taskId = null,
+            domainId = 12,
+            questId = 23,
+            startAt = 10_000,
+            endAt = 70_000,
+            expGained = 1,
+        )
+
+        val attached = attachTaskSnapshot(original, taskId = 34)
+
+        assertEquals(34L, attached.taskId)
+        assertEquals(12L, attached.domainId)
+        assertEquals(23L, attached.questId)
+        assertEquals(1L, attached.expGained)
+    }
+
     private fun session(id: Long) = SessionEntity(id = id, startAt = 10_000)
 }

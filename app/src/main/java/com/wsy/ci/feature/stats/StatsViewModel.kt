@@ -31,6 +31,8 @@ import com.wsy.ci.core.stats.ReviewDigest
 import com.wsy.ci.core.stats.ReviewMainQuest
 import com.wsy.ci.core.stats.ReviewPeriodSnapshot
 import com.wsy.ci.core.stats.ReviewSideQuest
+import com.wsy.ci.core.stats.SessionTimeSlice
+import com.wsy.ci.core.stats.intersectSessionTime
 import com.wsy.ci.core.stats.sessionMinuteBuckets
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.LlmParsed
@@ -50,6 +52,14 @@ data class AnalysisUi(val granularityLabel: String, val result: ReviewAnalysis)
 private const val REVIEW_TOP_HOURS = 3
 
 data class DomainStat(val name: String, val minutes: Int, val colorArgb: Long)
+
+/** 一条已结束专注及其落在当前统计周期内的裁剪片段。 */
+private data class PeriodSession(
+    val session: SessionEntity,
+    val slice: SessionTimeSlice,
+    /** CI 与经验在结束计时时结算，只归入结束时刻所在的统计周期。 */
+    val settledInPeriod: Boolean,
+)
 
 /**
  * 明细列表的一行：任务本体 + 它名下所有 session 汇总出的实际投入与结算产出。
@@ -204,9 +214,7 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun computeStats(fromDay: Long, toDay: Long): StatsData {
-        val sessions = db.sessionDao()
-            .byTimeRange(TimeFormat.dayStartMillis(fromDay), TimeFormat.dayEndMillis(toDay))
-            .filter { it.endAt != null }
+        val sessions = periodSessions(fromDay, toDay)
         val tasks = db.taskDao().byRange(fromDay, toDay)
         val ledger = db.ledgerDao()
             .byTimeRange(TimeFormat.dayStartMillis(fromDay), TimeFormat.dayEndMillis(toDay))
@@ -215,14 +223,14 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val quests = db.questDao().observeEvery().first()
 
         // 与结算、任务卡同一套换算（四舍五入），免得同一次专注在两处显示差一分钟
-        val minutesOf = { s: SessionEntity ->
-            TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
+        val minutesOf = { s: PeriodSession ->
+            TimeFormat.millisToMinutes(s.slice.endAt - s.slice.startAt)
         }
         val totalMinutes = sessions.sumOf(minutesOf)
 
         val domainName = domains.associateBy({ it.id }, { it })
         val questById = quests.associateBy { it.id }
-        val byDomain = sessions.groupBy { it.domainId }
+        val byDomain = sessions.groupBy { it.session.domainId }
             .map { (id, list) ->
                 val d = id?.let { domainName[it] }
                 DomainStat(
@@ -236,13 +244,13 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val heat = List(7) { IntArray(24) }
         val minutesByDay = mutableMapOf<Long, Int>()
         sessions.forEach { s ->
-            sessionMinuteBuckets(s.startAt, minutesOf(s)).forEach { bucket ->
+            sessionMinuteBuckets(s.slice.startAt, minutesOf(s)).forEach { bucket ->
                 heat[bucket.dayOfWeekIndex][bucket.hour]++
                 minutesByDay[bucket.epochDay] = (minutesByDay[bucket.epochDay] ?: 0) + 1
             }
         }
 
-        val sessionsByTask = sessions.groupBy { it.taskId }
+        val sessionsByTask = sessions.groupBy { it.session.taskId }
         val records = tasks
             .sortedWith(
                 compareByDescending<TaskEntity> { it.epochDay }.thenByDescending { it.startMinute }
@@ -253,8 +261,8 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                     task = task,
                     domainName = task.domainId?.let { domainName[it]?.name } ?: "未分类",
                     actualMinutes = own.sumOf(minutesOf),
-                    rewardCi = own.sumOf { it.rewardCi },
-                    expGained = own.sumOf { it.expGained },
+                    rewardCi = own.sumOf { if (it.settledInPeriod) it.session.rewardCi else 0L },
+                    expGained = own.sumOf { if (it.settledInPeriod) it.session.expGained else 0L },
                     questType = task.questId?.let { questById[it]?.type },
                     questTitle = task.questId?.let { questById[it]?.title },
                 )
@@ -294,18 +302,13 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
                 val previous = reviewSnapshot(prevRange.first, prevRange.second)
 
                 // 主线/支线只报进行中的；本期投入从该期 session 按任务线归组统计
-                val sessions = db.sessionDao()
-                    .byTimeRange(
-                        TimeFormat.dayStartMillis(curRange.first),
-                        TimeFormat.dayEndMillis(curRange.second),
-                    )
-                    .filter { it.endAt != null }
-                val minutesOf = { s: SessionEntity ->
-                    TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
+                val sessions = periodSessions(curRange.first, curRange.second)
+                val minutesOf = { s: PeriodSession ->
+                    TimeFormat.millisToMinutes(s.slice.endAt - s.slice.startAt)
                 }
-                val minutesByQuest = sessions.groupBy { it.questId }
+                val minutesByQuest = sessions.groupBy { it.session.questId }
                     .mapValues { (_, list) -> list.sumOf(minutesOf) }
-                val focusCountByQuest = sessions.groupingBy { it.questId }.eachCount()
+                val focusCountByQuest = sessions.groupingBy { it.session.questId }.eachCount()
                 val quests = db.questDao().observeEvery().first()
                 val mains = quests
                     .filter { it.type == QuestType.MAIN && it.status == QuestStatus.ACTIVE }
@@ -369,6 +372,22 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         StatsPeriod.MONTH -> "本月 vs 上月"
     }
 
+    /** 查询所有与周期相交的已结束专注，并把两端裁剪到周期边界。 */
+    private suspend fun periodSessions(fromDay: Long, toDay: Long): List<PeriodSession> {
+        val from = TimeFormat.dayStartMillis(fromDay)
+        val toExclusive = TimeFormat.dayStartMillis(toDay + 1)
+        return db.sessionDao().endedIntersecting(from, toExclusive).mapNotNull { session ->
+            val endAt = session.endAt ?: return@mapNotNull null
+            intersectSessionTime(session.startAt, endAt, from, toExclusive)?.let { slice ->
+                PeriodSession(
+                    session = session,
+                    slice = slice,
+                    settledInPeriod = endAt in from until toExclusive,
+                )
+            }
+        }
+    }
+
     /** 复用统计屏同一套聚合口径（computeStats），映射成复盘摘要需要的轻量快照。 */
     private suspend fun reviewSnapshot(fromDay: Long, toDay: Long): ReviewPeriodSnapshot {
         val d = computeStats(fromDay, toDay)
@@ -398,21 +417,24 @@ class StatsViewModel(app: Application) : AndroidViewModel(app) {
         val d = data.value ?: return
         viewModelScope.launch {
             try {
-                val sessions = db.sessionDao()
-                    .byTimeRange(TimeFormat.dayStartMillis(d.fromDay), TimeFormat.dayEndMillis(d.toDay))
-                    .filter { it.endAt != null }
-                val tasks = db.taskDao().byRange(d.fromDay, d.toDay).associateBy { it.id }
+                val sessions = periodSessions(d.fromDay, d.toDay)
+                val taskIds = sessions.mapNotNull { it.session.taskId }.distinct()
+                val tasks = if (taskIds.isEmpty()) emptyMap() else db.taskDao().byIds(taskIds).associateBy { it.id }
                 val csv = buildString {
                     appendLine("date,start,end,task,minutes,reward_ci,exp")
-                    sessions.forEach { s ->
-                        val mins = TimeFormat.millisToMinutes((s.endAt ?: s.startAt) - s.startAt)
+                    sessions.forEach { periodSession ->
+                        val s = periodSession.session
+                        val slice = periodSession.slice
+                        val mins = TimeFormat.millisToMinutes(slice.endAt - slice.startAt)
                         appendLine(
                             listOf(
-                                LocalDate.ofEpochDay(TimeFormat.millisToEpochDay(s.startAt)),
-                                TimeFormat.clock(s.startAt),
-                                TimeFormat.clock(s.endAt ?: s.startAt),
+                                LocalDate.ofEpochDay(TimeFormat.millisToEpochDay(slice.startAt)),
+                                TimeFormat.clock(slice.startAt),
+                                TimeFormat.clock(slice.endAt),
                                 "\"${s.taskId?.let { tasks[it]?.title } ?: "自由专注"}\"",
-                                mins, s.rewardCi, s.expGained,
+                                mins,
+                                if (periodSession.settledInPeriod) s.rewardCi else 0L,
+                                if (periodSession.settledInPeriod) s.expGained else 0L,
                             ).joinToString(",")
                         )
                     }

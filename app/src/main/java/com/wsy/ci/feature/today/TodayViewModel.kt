@@ -17,6 +17,7 @@
 package com.wsy.ci.feature.today
 
 import android.app.Application
+import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wsy.ci.CiApp
@@ -87,6 +88,10 @@ internal fun applyTaskStopProjection(
         }
     }
 }
+
+/** 补录任务只建立关联；领域和任务线是开工时的结算快照，不能事后改写。 */
+internal fun attachTaskSnapshot(session: SessionEntity, taskId: Long): SessionEntity =
+    session.copy(taskId = taskId)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
@@ -269,15 +274,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun attachTaskToSession(task: TaskEntity, sessionId: Long) {
         viewModelScope.launch {
-            val taskId = db.taskDao().insert(task)
-            db.sessionDao().byId(sessionId)?.let { session ->
-                db.sessionDao().update(
-                    session.copy(
-                        taskId = taskId,
-                        domainId = task.domainId ?: session.domainId,
-                        questId = task.questId ?: session.questId,
-                    )
-                )
+            db.withTransaction {
+                val session = db.sessionDao().byId(sessionId) ?: return@withTransaction
+                val taskId = db.taskDao().insert(task)
+                db.sessionDao().update(attachTaskSnapshot(session, taskId))
             }
             CiWidgetUpdater.updateAll(getApplication())
         }

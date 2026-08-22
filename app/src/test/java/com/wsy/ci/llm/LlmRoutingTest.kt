@@ -27,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +41,35 @@ class LlmRoutingTest {
         assertTrue(LlmRouteParser.parse("deepseek-pro") is LlmRoute.Api)
         assertTrue(LlmRouteParser.parse("api:deepseek-flash") is LlmRoute.Api)
         assertTrue(LlmRouteParser.parse("nonsense") is LlmRoute.Invalid)
+    }
+
+    @Test
+    fun `显式端点缺少自己的Key时不会静默改投其他供应商`() {
+        val resolved = resolveApiEndpoint(
+            task = LlmTaskType.TITLE_GEN,
+            selection = LlmRoute.Api(LlmEndpoints.MIMO),
+            hasKey = { it == LlmEndpoints.KEY_DEEPSEEK },
+        )
+
+        assertNull(resolved)
+    }
+
+    @Test
+    fun `默认文本路由缺Key时仍可回退到已配置端点`() {
+        val resolved = resolveApiEndpoint(
+            task = LlmTaskType.TITLE_GEN,
+            selection = LlmRoute.Default,
+            hasKey = { it == LlmEndpoints.KEY_DEEPSEEK },
+        )
+
+        assertEquals(LlmEndpoints.DEEPSEEK_FLASH, resolved)
+    }
+
+    @Test
+    fun `JSON字符串里的括号不会提前截断`() {
+        val json = """["数组 arr[i]", "右花括号 }", "引号 \" 内仍有 ]"]"""
+
+        assertEquals(json, extractJson("模型说明：$json\n以上"))
     }
 
     @Test

@@ -127,6 +127,10 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun byId(id: Long): TaskEntity?
 
+    /** 按 id 批量读取，导出跨周期专注时仍能还原前一日任务名称。 */
+    @Query("SELECT * FROM tasks WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<Long>): List<TaskEntity>
+
     /**
      * 解除某条任务线下所有任务的关联。删任务线时用：
      * 时间块和它背后的 session、流水都是真实发生过的历史，不该跟着任务线一起消失。
@@ -161,6 +165,20 @@ interface SessionDao {
 
     @Query("SELECT * FROM sessions WHERE startAt BETWEEN :from AND :to ORDER BY startAt")
     suspend fun byTimeRange(from: Long, to: Long): List<SessionEntity>
+
+    /** 已结束且与 [from, toExclusive) 有实际交集的记录，供跨日/跨周期统计裁剪。 */
+    @Query(
+        "SELECT * FROM sessions WHERE endAt IS NOT NULL " +
+            "AND startAt < :toExclusive AND endAt > :from ORDER BY startAt"
+    )
+    suspend fun endedIntersecting(from: Long, toExclusive: Long): List<SessionEntity>
+
+    /** [endedIntersecting] 的响应式版本，供今日小组件统计跨午夜的实际分钟。 */
+    @Query(
+        "SELECT * FROM sessions WHERE endAt IS NOT NULL " +
+            "AND startAt < :toExclusive AND endAt > :from ORDER BY startAt"
+    )
+    fun observeEndedIntersecting(from: Long, toExclusive: Long): Flow<List<SessionEntity>>
 
     @Query("SELECT * FROM sessions WHERE endAt IS NULL ORDER BY startAt DESC LIMIT 1")
     suspend fun openSession(): SessionEntity?

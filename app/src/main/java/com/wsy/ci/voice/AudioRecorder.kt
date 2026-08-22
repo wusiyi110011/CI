@@ -16,6 +16,7 @@
 
 package com.wsy.ci.voice
 
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -31,6 +32,7 @@ data class RecordedAudio(val samples: FloatArray, val sampleRateHz: Int)
 class AudioRecorder {
     @Volatile private var recording = false
 
+    @SuppressLint("MissingPermission")
     suspend fun record(onAmplitude: (Float) -> Unit): RecordedAudio {
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
@@ -70,7 +72,10 @@ class AudioRecorder {
                 onAmplitude(sqrt(sumSquares / count).toFloat())
             }
         } finally {
-            audioRecord.stop()
+            recording = false
+            if (audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                runCatching { audioRecord.stop() }
+            }
             audioRecord.release()
         }
         return RecordedAudio(buffer.copyOf(written), SAMPLE_RATE)

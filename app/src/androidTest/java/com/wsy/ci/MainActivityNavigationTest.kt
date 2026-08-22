@@ -33,6 +33,11 @@ class MainActivityNavigationTest {
                     localModelState = LocalModelUiState(),
                     onSelect = { selected = it },
                     onAiClick = {},
+                    onVoiceStart = {},
+                    onVoiceDragCancelChanged = {},
+                    onVoiceEnd = {},
+                    onVoiceCancel = {},
+                    onRequestRecordAudioPermission = {},
                 )
             }
         }

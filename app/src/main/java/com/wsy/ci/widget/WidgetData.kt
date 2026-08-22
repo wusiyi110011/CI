@@ -41,12 +41,16 @@ internal fun todayUiFlow(context: Context): Flow<TodayWidgetUi> {
         combine(
             container.db.taskDao().observeByDay(today),
             container.db.sessionDao().observeOpenSession(),
-            container.db.sessionDao().observeByTimeRange(
+            container.db.sessionDao().observeEndedIntersecting(
                 TimeFormat.dayStartMillis(today),
-                TimeFormat.dayEndMillis(today),
+                TimeFormat.dayStartMillis(today + 1),
             ),
         ) { tasks, open, sessions ->
-            val focusedMillis = sessions.sumOf { s -> s.endAt?.let { it - s.startAt } ?: 0L }
+            val dayStart = TimeFormat.dayStartMillis(today)
+            val dayEnd = TimeFormat.dayStartMillis(today + 1)
+            val focusedMillis = sessions.sumOf { s ->
+                minOf(s.endAt ?: dayEnd, dayEnd) - maxOf(s.startAt, dayStart)
+            }
             TodayWidgetModel.build(
                 tasks = tasks,
                 openSessionTaskId = open?.taskId,

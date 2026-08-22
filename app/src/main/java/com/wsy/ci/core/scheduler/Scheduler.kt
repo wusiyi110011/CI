@@ -68,7 +68,7 @@ object Scheduler {
             addAll(blockers)
             // 已过去的时间不可用
             nowMinute?.takeIf { it > dayWindow.startMinute }?.let {
-                add(Slot(dayWindow.startMinute, it.coerceAtMost(dayWindow.endMinute - 1) + 0))
+                add(Slot(dayWindow.startMinute, it.coerceAtMost(dayWindow.endMinute)))
             }
         }.filter { it.endMinute > dayWindow.startMinute && it.startMinute < dayWindow.endMinute }
 

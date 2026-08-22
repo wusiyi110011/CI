@@ -144,15 +144,27 @@ fun extractJson(raw: String): String {
     val candidate = (fenced ?: raw).trim()
     val start = candidate.indexOfFirst { it == '{' || it == '[' }
     if (start < 0) return candidate
-    val open = candidate[start]
-    val close = if (open == '{') '}' else ']'
-    var depth = 0
+    val expectedClosings = ArrayDeque<Char>()
+    var insideString = false
+    var escaped = false
     for (i in start until candidate.length) {
-        when (candidate[i]) {
-            open -> depth++
-            close -> {
-                depth--
-                if (depth == 0) return candidate.substring(start, i + 1)
+        val char = candidate[i]
+        if (insideString) {
+            when {
+                escaped -> escaped = false
+                char == '\\' -> escaped = true
+                char == '"' -> insideString = false
+            }
+            continue
+        }
+        when (char) {
+            '"' -> insideString = true
+            '{' -> expectedClosings.addLast('}')
+            '[' -> expectedClosings.addLast(']')
+            '}', ']' -> {
+                if (expectedClosings.lastOrNull() != char) return candidate.substring(start)
+                expectedClosings.removeLast()
+                if (expectedClosings.isEmpty()) return candidate.substring(start, i + 1)
             }
         }
     }

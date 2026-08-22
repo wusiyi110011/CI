@@ -46,4 +46,23 @@ class SessionMinuteBucketsTest {
     fun `零分钟不产生统计桶`() {
         assertEquals(emptyList<SessionMinuteBucket>(), sessionMinuteBuckets(0L, 0, ZoneOffset.UTC))
     }
+
+    @Test
+    fun `跨周期专注会裁剪到当前周期边界`() {
+        val rangeStart = Instant.parse("2026-09-01T00:00:00Z").toEpochMilli()
+        val rangeEnd = Instant.parse("2026-10-01T00:00:00Z").toEpochMilli()
+        val sessionStart = Instant.parse("2026-08-31T23:30:00Z").toEpochMilli()
+        val sessionEnd = Instant.parse("2026-09-01T00:30:00Z").toEpochMilli()
+
+        val slice = intersectSessionTime(sessionStart, sessionEnd, rangeStart, rangeEnd)
+
+        assertEquals(rangeStart, slice?.startAt)
+        assertEquals(sessionEnd, slice?.endAt)
+    }
+
+    @Test
+    fun `不与周期相交的专注不会进入统计`() {
+        assertEquals(null, intersectSessionTime(100, 200, 300, 400))
+        assertEquals(null, intersectSessionTime(400, 500, 300, 400))
+    }
 }

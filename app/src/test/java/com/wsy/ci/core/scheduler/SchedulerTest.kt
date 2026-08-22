@@ -92,6 +92,20 @@ class SchedulerTest {
     }
 
     @Test
+    fun `日窗口结束后一分钟任务也不能排进过去`() {
+        val tasks = listOf(task(1, window.endMinute - 1, window.endMinute))
+
+        val result = Scheduler.reschedule(
+            tasks = tasks,
+            blockers = emptyList(),
+            dayWindow = window,
+            nowMinute = window.endMinute,
+        )
+
+        assertEquals(listOf(1L), result.unplaced.map { it.id })
+    }
+
+    @Test
     fun `原时间无冲突的任务不被挪动即便优先级低`() {
         val tasks = listOf(
             task(1, 9 * 60, 12 * 60, questId = 100),
