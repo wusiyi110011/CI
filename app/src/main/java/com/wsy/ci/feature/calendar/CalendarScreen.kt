@@ -91,6 +91,7 @@ import com.wsy.ci.feature.today.TaskDetailDialog
 import com.wsy.ci.feature.today.TaskEditorDialog
 import com.wsy.ci.feature.today.sessionsToBlocks
 import com.wsy.ci.feature.today.timelineConflictCount
+import com.wsy.ci.feature.today.weekConflictCount
 import com.wsy.ci.widget.CiWidgetUpdater
 import com.wsy.ci.widget.TimerService
 import java.time.DayOfWeek
@@ -348,13 +349,11 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                 CalendarMode.WEEK -> {
                     val weekStart = LocalDate.ofEpochDay(selectedDay)
                         .with(DayOfWeek.MONDAY).toEpochDay()
-                    val weekSegments = (0..6).flatMap { offset ->
-                        DaySegments.tasksOn(weekTasks, weekStart + offset)
-                    }
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                         TimelineFeedback(
                             blockers = weekBlockers.values.sumOf { it.size },
-                            conflicts = timelineConflictCount(weekSegments),
+                            // 冲突按天统计：不同天的块画在各自列里，同一天内重叠才算冲突
+                            conflicts = weekConflictCount(weekTasks, weekStart),
                             unplaced = unplacedTasks,
                         )
                         WeekGrid(

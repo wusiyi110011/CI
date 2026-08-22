@@ -261,10 +261,31 @@ private fun BlockerBlock(blocker: BlockerEntity, y: Dp, height: Dp) {
     }
 }
 
-/** 用并排分栏表达重叠，同时把冲突明确写出来，避免只靠颜色或位置猜测。 */
+/**
+ * 用并排分栏表达重叠，同时把冲突明确写出来，避免只靠颜色或位置猜测。
+ *
+ * 只统计还没定局的块（计划中/进行中）：DONE、SKIPPED 是既成事实，
+ * 重排引擎也不会再动它们，对历史记录提示「点开任务调整」只是噪音——
+ * 比如跳过了 19:30 的课改做 20:12 的另一门，不该算成待处理的重叠。
+ */
 internal fun timelineConflictCount(segments: List<TaskSegment>): Int =
-    TaskLanes.assign(segments.map { Span(it.startMinute, it.endMinute) })
-        .count { it.laneCount > 1 }
+    TaskLanes.assign(
+        segments
+            .filter {
+                it.task.status == TaskStatus.PLANNED || it.task.status == TaskStatus.RUNNING
+            }
+            .map { Span(it.startMinute, it.endMinute) },
+    ).count { it.laneCount > 1 }
+
+/**
+ * 周视图的冲突数：周网格一天一列、各列独立布局，所以按天分别统计再相加。
+ * `Span` 只有「当日分钟数」，把整周的段拍平成一份去数，
+ * 会把不同天里的同一时段（如每天 9:00–10:00）误判成重叠。
+ */
+internal fun weekConflictCount(tasks: List<TaskEntity>, weekStartDay: Long): Int =
+    (0..6).sumOf { offset ->
+        timelineConflictCount(DaySegments.tasksOn(tasks, weekStartDay + offset))
+    }
 
 /** 时间线反馈行：锁定、冲突和未安置都是可恢复的正常状态。 */
 @Composable
