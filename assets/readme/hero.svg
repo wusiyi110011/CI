@@ -32,7 +32,7 @@
           font-size="19" fill="#606257">AI 排程 · 专注计时 · CI 币经济 · 数据复盘，一台平板上的完整学习工作流</text>
 
     <text x="2" y="256" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="16.5" fill="#8B8B7D">v0.1.0  ·  Kotlin 2.1  ·  Compose  ·  Room  ·  MNN  ·  minSdk 31  ·  arm64-v8a</text>
+          font-size="16.5" fill="#8B8B7D">v0.3.0  ·  Kotlin 2.1  ·  Compose  ·  Room  ·  MNN  ·  minSdk 31  ·  arm64-v8a</text>
   </g>
 
   <!-- ===== hand-drawn compass star with gamified orbit ===== -->
