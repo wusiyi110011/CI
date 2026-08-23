@@ -29,6 +29,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.targetOrNull
 import com.wsy.ci.widget.TimerService
 import java.time.LocalDate
@@ -42,6 +43,7 @@ import kotlinx.serialization.json.JsonObject
 object StartTimerSkill : AppSkill {
 
     override val id = "start_timer"
+    override val risk = SkillRisk.MODERATE
     override val llmSpec = "开始某个任务/主线/支线的专注计时；args: {\"targetId\": 候选清单里的数字id}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {

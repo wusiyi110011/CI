@@ -25,7 +25,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -67,7 +66,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.content.ContextCompat
@@ -89,8 +93,14 @@ import com.wsy.ci.feature.shop.ShopScreen
 import com.wsy.ci.feature.stats.StatsScreen
 import com.wsy.ci.feature.today.TodayScreen
 import com.wsy.ci.feature.voice.VoiceOverlayHost
+import com.wsy.ci.feature.voice.VoiceWakeAvatar
 import com.wsy.ci.feature.voice.VoiceViewModel
+import com.wsy.ci.feature.voice.VoiceUiState
+import com.wsy.ci.feature.voice.avatarLabel
 import com.wsy.ci.localmodel.download.LocalModelDownloadManager
+import com.wsy.ci.voice.VoiceWakeService
+import com.wsy.ci.voice.VoiceWakeState
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class Destination(
@@ -113,7 +123,11 @@ class MainActivity : ComponentActivity() {
     /** 首次长按 AI 图标才申请，不在 onCreate 里主动要；拒绝时下次长按会再检查一次。 */
     private val recordAudioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* 是否授权由用户决定。 */ }
+    ) { granted ->
+        if (granted && (application as CiApp).container.appSettings.wakeWordEnabled.value) {
+            VoiceWakeService.start(this)
+        }
+    }
 
     private val localModelController: LocalModelController
         get() = (application as CiApp).container.localModelController
@@ -121,6 +135,8 @@ class MainActivity : ComponentActivity() {
         get() = (application as CiApp).container.dataBackupController
     private val asrDownloads: LocalModelDownloadManager
         get() = (application as CiApp).container.asrDownloads
+    private val kwsDownloads: LocalModelDownloadManager
+        get() = (application as CiApp).container.kwsDownloads
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -160,6 +176,7 @@ class MainActivity : ComponentActivity() {
                         localModelController = localModelController,
                         dataBackupController = dataBackupController,
                         asrDownloads = asrDownloads,
+                        kwsDownloads = kwsDownloads,
                         onRequestRecordAudioPermission = {
                             recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         },
@@ -180,6 +197,7 @@ private fun CiRoot(
     localModelController: LocalModelController,
     dataBackupController: DataBackupController,
     asrDownloads: LocalModelDownloadManager,
+    kwsDownloads: LocalModelDownloadManager,
     onRequestRecordAudioPermission: () -> Unit,
 ) {
     var destination by rememberSaveable { mutableStateOf(Destination.TODAY) }
@@ -188,6 +206,22 @@ private fun CiRoot(
     var confirmCancelInference by rememberSaveable { mutableStateOf(false) }
     val voiceViewModel: VoiceViewModel = viewModel()
     val voiceState by voiceViewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val app = context.applicationContext as CiApp
+    val wakeEnabled by app.container.appSettings.wakeWordEnabled.collectAsStateWithLifecycle()
+    val wakePhrase by app.container.appSettings.wakePhrase.collectAsStateWithLifecycle()
+    val wakeCanListen = voiceState == VoiceUiState.Idle ||
+        voiceState is VoiceUiState.Confirm || voiceState is VoiceUiState.Disambiguate
+    LaunchedEffect(wakeEnabled, wakePhrase, wakeCanListen) {
+        val permissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (wakeEnabled && permissionGranted && wakeCanListen) {
+            // 服务内会串行停止旧 stream 后再用新短语启动，这里不做 stop/start 抢跑。
+            VoiceWakeService.start(context)
+        } else {
+            VoiceWakeService.pause(context)
+        }
+    }
     LaunchedEffect(voiceViewModel) {
         voiceViewModel.navigationEvents.collect { destination = it }
     }
@@ -195,6 +229,7 @@ private fun CiRoot(
         CiNavigationRail(
             selected = destination,
             localModelState = localModelState,
+            wakeStateFlow = app.container.voiceWakeRuntime.state,
             onSelect = { destination = it },
             onAiClick = {
                 when (localModelState.serviceState) {
@@ -231,6 +266,16 @@ private fun CiRoot(
                         localModelController = localModelController,
                         backupController = dataBackupController,
                         asrDownloads = asrDownloads,
+                        kwsDownloads = kwsDownloads,
+                        onStartWakeListening = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                onRequestRecordAudioPermission()
+                            }
+                        },
+                        onStopWakeListening = {},
+                        onClearCorrectionRecords = app.container.voiceCorrectionStore::clear,
                     )
                 }
             }
@@ -266,6 +311,7 @@ private fun CiRoot(
 internal fun CiNavigationRail(
     selected: Destination,
     localModelState: com.wsy.ci.feature.settings.LocalModelUiState,
+    wakeStateFlow: StateFlow<VoiceWakeState>,
     onSelect: (Destination) -> Unit,
     onAiClick: () -> Unit,
     onVoiceStart: () -> Unit,
@@ -318,6 +364,7 @@ internal fun CiNavigationRail(
         }
         AiQuickEntry(
             state = localModelState,
+            wakeStateFlow = wakeStateFlow,
             onClick = onAiClick,
             onVoiceStart = onVoiceStart,
             onVoiceDragCancelChanged = onVoiceDragCancelChanged,
@@ -334,6 +381,7 @@ private val VOICE_CANCEL_THRESHOLD = 64.dp
 @Composable
 private fun AiQuickEntry(
     state: com.wsy.ci.feature.settings.LocalModelUiState,
+    wakeStateFlow: StateFlow<VoiceWakeState>,
     onClick: () -> Unit,
     onVoiceStart: () -> Unit,
     onVoiceDragCancelChanged: (Boolean) -> Unit,
@@ -341,22 +389,48 @@ private fun AiQuickEntry(
     onVoiceCancel: () -> Unit,
     onRequestRecordAudioPermission: () -> Unit,
 ) {
+    val wakeState by wakeStateFlow.collectAsStateWithLifecycle()
     val active = state.serviceState != LocalModelServiceState.OFF
-    val content = if (active) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val wakeEngaged = wakeState is VoiceWakeState.WakeDetected ||
+        wakeState is VoiceWakeState.Capturing || wakeState is VoiceWakeState.Recognizing
+    val wakeFailed = wakeState is VoiceWakeState.Failed
+    val content = when {
+        wakeFailed -> MaterialTheme.colorScheme.onErrorContainer
+        active || wakeEngaged -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val companionState = state.companionState
+    val statusLabel = wakeState.avatarLabel(companionState.label())
     val context = LocalContext.current
     Column(
         modifier = Modifier
             .size(CiSizes.navRailItem)
             .clip(CiShapes.field)
             .background(
-                if (active) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                when {
+                    wakeFailed -> MaterialTheme.colorScheme.errorContainer
+                    active || wakeEngaged -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.background.copy(alpha = 0f)
+                },
             )
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = "本地 AI，$statusLabel；长按开始语音，上滑取消"
+                onClick("打开本地 AI") {
+                    onClick()
+                    true
+                }
+                customActions = listOf(
+                    CustomAccessibilityAction("开始语音录入") {
+                        val hasPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (hasPermission) onVoiceStart() else onRequestRecordAudioPermission()
+                        true
+                    },
+                )
+            }
             .pointerInput(Unit) {
                 val cancelThresholdPx = VOICE_CANCEL_THRESHOLD.toPx()
                 awaitEachGesture {
@@ -404,13 +478,13 @@ private fun AiQuickEntry(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Image(
-            painter = painterResource(companionState.avatarDrawable()),
-            contentDescription = "本地 AI",
-            modifier = Modifier.size(CiSizes.navRailAiIcon),
+        VoiceWakeAvatar(
+            state = wakeState,
+            avatarRes = companionState.avatarDrawable(),
+            modifier = Modifier.size(CiSizes.fab),
         )
         Text(
-            text = companionState.label(),
+            text = statusLabel,
             style = MaterialTheme.typography.labelSmall,
             color = content,
         )

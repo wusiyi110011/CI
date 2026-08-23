@@ -23,6 +23,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -30,6 +31,7 @@ import kotlinx.serialization.json.JsonPrimitive
 object NavigateSkill : AppSkill {
 
     override val id = "navigate"
+    override val risk = SkillRisk.SAFE
     override val llmSpec =
         "打开/切换到某个页面；args: {\"destination\": \"TODAY|CALENDAR|QUEST|SHOP|STATS|SETTINGS\"}"
 

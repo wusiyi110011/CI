@@ -20,6 +20,7 @@ import android.content.Context
 import com.wsy.ci.core.data.QuestRepository
 import com.wsy.ci.core.data.ShopRepository
 import com.wsy.ci.core.data.TimerRepository
+import com.wsy.ci.core.data.VoiceStatsRepository
 import com.wsy.ci.core.db.CiDatabase
 import com.wsy.ci.core.db.TaskEntity
 import com.wsy.ci.core.voice.PinyinOf
@@ -39,6 +40,16 @@ enum class SkillDestination(val label: String) {
     SHOP("商城"),
     STATS("复盘"),
     SETTINGS("设置"),
+}
+
+/** 语音技能的风险级别，用于确认卡片决定警示样式和二次确认策略。 */
+enum class SkillRisk {
+    /** 只读查询或页面跳转，不会改变数据。 */
+    SAFE,
+    /** 会改变计划或结算状态，但可通过应用内流程恢复。 */
+    MODERATE,
+    /** 删除、消费等不可逆或有明确资产损失的操作。 */
+    DANGEROUS,
 }
 
 /** 一个技能执行完的结果。 */
@@ -88,6 +99,8 @@ class SkillExecutionContext(
     val quest: QuestRepository,
     val rescheduleFlow: RescheduleFlow,
     val updateWidgets: suspend () -> Unit,
+    /** 高频语音查询仓库；未注入时技能会按 db 临时构造，保持旧调用方兼容。 */
+    val stats: VoiceStatsRepository? = null,
 )
 
 /** 一次已解析、可执行的技能调用：确认卡片据此渲染预览，用户点执行后调用 [AppSkill.execute]。 */
@@ -106,6 +119,10 @@ interface AppSkill {
 
     /** 塞进 LLM system prompt 的一行功能说明 + 参数格式。 */
     val llmSpec: String
+
+    /** 当前技能的风险等级；旧技能默认安全，新技能应显式覆盖。 */
+    val risk: SkillRisk
+        get() = SkillRisk.SAFE
 
     /** 规则层：未命中返回 null。 */
     fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs?

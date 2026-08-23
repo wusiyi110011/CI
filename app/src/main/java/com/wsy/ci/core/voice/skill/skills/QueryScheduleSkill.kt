@@ -24,6 +24,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.dateRangeOrNull
 import kotlinx.serialization.json.JsonObject
 
@@ -31,6 +32,7 @@ import kotlinx.serialization.json.JsonObject
 object QueryScheduleSkill : AppSkill {
 
     override val id = "query_schedule"
+    override val risk = SkillRisk.SAFE
     override val llmSpec = "查看某天或某段时间的任务安排；args: {\"from\":\"yyyy-MM-dd\",\"to\":\"yyyy-MM-dd\"}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {

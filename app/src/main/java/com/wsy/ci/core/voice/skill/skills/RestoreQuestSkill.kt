@@ -26,6 +26,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.targetIdOrNull
 import com.wsy.ci.core.voice.skill.targetOrNull
 import com.wsy.ci.feature.quest.MAX_ACTIVE_MAIN_QUESTS
@@ -35,6 +36,7 @@ import kotlinx.serialization.json.JsonObject
 object RestoreQuestSkill : AppSkill {
 
     override val id = "restore_quest"
+    override val risk = SkillRisk.MODERATE
     override val llmSpec = "恢复一条已完成/已归档的任务线；args: {\"targetId\": 候选清单里的数字id}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {

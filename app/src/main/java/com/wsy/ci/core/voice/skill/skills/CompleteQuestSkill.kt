@@ -25,6 +25,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.targetIdOrNull
 import com.wsy.ci.core.voice.skill.targetOrNull
 import kotlinx.serialization.json.JsonObject
@@ -33,9 +34,12 @@ import kotlinx.serialization.json.JsonObject
 object CompleteQuestSkill : AppSkill {
 
     override val id = "complete_quest"
+    override val risk = SkillRisk.MODERATE
     override val llmSpec = "把一条任务线标记为已完成；args: {\"targetId\": 候选清单里的数字id}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {
+        // 运行中的专注必须先结算；即使是自由专注，也不能把「完成任务线」直接吞掉。
+        if (ctx.hasRunningSession) return null
         if (SkillKeywords.FINISH_WORDS.none { text.contains(it) }) return null
         val quest = VoiceTargetMatcher.match(text, ctx.candidates, ctx.pinyinOf)
             ?.takeIf { it.kind == VoiceTargetKind.QUEST } ?: return null
@@ -57,6 +61,10 @@ object CompleteQuestSkill : AppSkill {
         val questId = args.targetIdOrNull() ?: return SkillOutcome.Failed("任务线已失效，请重新说一次")
         val quest = ctx.db.questDao().byId(questId)
             ?: return SkillOutcome.Failed("找不到这条任务线，可能已被删除")
+        // LLM 路径没有经过规则层，执行前再检查一次全局 session，防止确认期间刚开始专注。
+        if (ctx.db.sessionDao().openSession() != null) {
+            return SkillOutcome.Failed("当前有进行中的专注，请先结束专注再完成任务线")
+        }
         if (quest.status != QuestStatus.ACTIVE) {
             return SkillOutcome.Failed("「${quest.title}」不是进行中状态，无需完成")
         }

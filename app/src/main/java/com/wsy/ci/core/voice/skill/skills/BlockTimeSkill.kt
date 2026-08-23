@@ -26,6 +26,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.reasonOrNull
 import com.wsy.ci.core.voice.skill.timeSpansOrNull
 import com.wsy.ci.llm.ParsedBlocker
@@ -40,6 +41,7 @@ import kotlinx.serialization.json.JsonObject
 object BlockTimeSkill : AppSkill {
 
     override val id = "block_time"
+    override val risk = SkillRisk.MODERATE
     override val llmSpec =
         "记一段不可安排时间的占位事件（没空/有事/要去…）；" +
             "args: {\"spans\":[{\"date\":\"yyyy-MM-dd\",\"start\":\"HH:mm\",\"end\":\"HH:mm\"}],\"reason\":\"原因\"}"

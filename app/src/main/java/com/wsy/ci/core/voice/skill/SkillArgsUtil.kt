@@ -19,6 +19,7 @@ package com.wsy.ci.core.voice.skill
 import com.wsy.ci.core.voice.TimeSpan
 import com.wsy.ci.core.voice.VoiceTarget
 import com.wsy.ci.core.voice.VoiceTargetKind
+import com.wsy.ci.core.economy.Difficulty
 import java.time.LocalDate
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -100,6 +101,40 @@ fun JsonObject.timeSpansOrNull(): List<TimeSpan>? {
 /** LLM args 里的占位原因；缺省给通用文案。 */
 fun JsonObject.reasonOrNull(): String? =
     this["reason"]?.asPrimitiveOrNull?.content?.trim()?.takeIf { it.isNotBlank() }
+
+/** 读取并限制 LLM 给出的短文本参数，避免把超长内容直接写入实体或确认卡片。 */
+fun JsonObject.textOrNull(key: String, maxLength: Int = 200): String? =
+    this[key]?.asPrimitiveOrNull?.takeIf { it.isString }?.content?.trim()
+        ?.takeIf { it.isNotBlank() && it.length <= maxLength }
+
+/** 读取 ISO 日期并转成 epochDay；日期错误时返回 null。 */
+fun JsonObject.epochDayOrNull(vararg keys: String): Long? = keys.asSequence()
+    .mapNotNull { key ->
+        this[key]?.asPrimitiveOrNull?.content?.let(::parseDateOrNull)
+            ?: this[key]?.asPrimitiveOrNull?.longOrNull
+    }
+    .firstOrNull()
+
+/** 读取 HH:mm 或当日分钟数，并限制在合法的一天范围内。 */
+fun JsonObject.minuteOrNull(vararg keys: String): Int? = keys.asSequence()
+    .mapNotNull { key ->
+        val element = this[key]?.asPrimitiveOrNull ?: return@mapNotNull null
+        element.content.toIntOrNull()?.takeIf { it in 0..24 * 60 }
+            ?: parseHmOrNull(element.content)
+    }
+    .firstOrNull()
+
+/** 将 LLM 给出的难度枚举安全地转换为业务枚举。 */
+fun JsonObject.difficultyOrNull(): Difficulty? {
+    val raw = this["difficulty"]?.asPrimitiveOrNull?.content?.trim() ?: return null
+    return Difficulty.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        ?: Difficulty.entries.firstOrNull { it.label == raw }
+}
+
+/** 规则层与 LLM 层共用的日期/时间边界校验。 */
+fun validTaskTime(epochDay: Long, startMinute: Int, endMinute: Int, today: Long): Boolean =
+    epochDay in today..today + MAX_RANGE_DAYS && startMinute in 0 until 24 * 60 &&
+        endMinute in 1..24 * 60 && endMinute > startMinute
 
 private fun parseDateOrNull(text: String): Long? =
     runCatching { LocalDate.parse(text).toEpochDay() }.getOrNull()

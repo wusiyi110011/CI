@@ -23,22 +23,72 @@ package com.wsy.ci.core.voice
  */
 object VoiceTargetMatcher {
 
+    /** 一个候选在文本中的归一化匹配分数，分数越高越可信。 */
+    data class RankedTarget(val target: VoiceTarget, val score: Double)
+
+    /** 排名结果的最低分；低于此值的候选不会进入消歧列表。 */
+    private const val DEFAULT_THRESHOLD = 0.62
+
+    /** 最高分与次高分差距不超过此值时视为近似同分，必须交给用户确认。 */
+    const val DEFAULT_TIE_MARGIN = 0.05
+
+    /**
+     * 对所有候选按分数从高到低排名。返回值是纯数据，不执行任何副作用，
+     * 供确认卡片展示候选和测试消歧边界。
+     */
+    fun rank(
+        text: String,
+        candidates: List<VoiceTarget>,
+        pinyinOf: PinyinOf,
+        threshold: Double = 0.0,
+    ): List<RankedTarget> = candidates
+        .asSequence()
+        .map { RankedTarget(it, scoreCandidate(text, it.name, pinyinOf)) }
+        .filter { it.score >= threshold }
+        .sortedWith(compareByDescending<RankedTarget> { it.score }.thenBy { it.target.id })
+        .toList()
+
+    /** 与 [rank] 等价的描述性 API，保留给需要显式表达「候选排名」的调用方。 */
+    fun rankCandidates(
+        text: String,
+        candidates: List<VoiceTarget>,
+        pinyinOf: PinyinOf,
+        threshold: Double = 0.0,
+    ): List<RankedTarget> = rank(text, candidates, pinyinOf, threshold)
+
+    /** [rank] 的兼容别名，强调返回「带分数的匹配结果」。 */
+    fun matchWithScores(
+        text: String,
+        candidates: List<VoiceTarget>,
+        pinyinOf: PinyinOf,
+        threshold: Double = 0.0,
+    ): List<RankedTarget> = rank(text, candidates, pinyinOf, threshold)
+
+    /** 判断前两名是否近似同分；同名候选会得到 0 分差，必然返回 true。 */
+    fun isNearTie(
+        ranked: List<RankedTarget>,
+        tieMargin: Double = DEFAULT_TIE_MARGIN,
+    ): Boolean = ranked.size >= 2 &&
+        ranked[0].score - ranked[1].score <= tieMargin.coerceAtLeast(0.0)
+
+    /** 便于调用方直接对两个分数做近似同分判定。 */
+    fun isNearTie(topScore: Double, secondScore: Double, tieMargin: Double = DEFAULT_TIE_MARGIN): Boolean =
+        topScore - secondScore <= tieMargin.coerceAtLeast(0.0)
+
+    /** [isNearTie] 的语义别名，供确认流程直接表达「候选是否有歧义」。 */
+    fun isAmbiguous(ranked: List<RankedTarget>, tieMargin: Double = DEFAULT_TIE_MARGIN): Boolean =
+        isNearTie(ranked, tieMargin)
+
     fun match(
         text: String,
         candidates: List<VoiceTarget>,
         pinyinOf: PinyinOf,
-        threshold: Double = 0.62,
+        threshold: Double = DEFAULT_THRESHOLD,
+        tieMargin: Double = DEFAULT_TIE_MARGIN,
     ): VoiceTarget? {
-        var best: VoiceTarget? = null
-        var bestScore = 0.0
-        for (candidate in candidates) {
-            val score = scoreCandidate(text, candidate.name, pinyinOf)
-            if (score > bestScore) {
-                bestScore = score
-                best = candidate
-            }
-        }
-        return best.takeIf { bestScore >= threshold }
+        val ranked = rank(text, candidates, pinyinOf, threshold)
+        if (ranked.isEmpty() || isNearTie(ranked, tieMargin)) return null
+        return ranked.first().target
     }
 
     private fun scoreCandidate(text: String, name: String, pinyinOf: PinyinOf): Double {

@@ -26,6 +26,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.targetIdOrNull
 import com.wsy.ci.core.voice.skill.targetOrNull
 import kotlinx.serialization.json.JsonObject
@@ -34,6 +35,7 @@ import kotlinx.serialization.json.JsonObject
 object QueryDomainSkill : AppSkill {
 
     override val id = "query_domain"
+    override val risk = SkillRisk.SAFE
     override val llmSpec = "查看某学习领域的等级与经验进度；args: {\"targetId\": 候选清单里的数字id}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {

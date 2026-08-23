@@ -52,6 +52,9 @@ class RescheduleFlow(
     val undoSchedule = MutableStateFlow<UndoSchedule?>(null)
     private var undoExpiryJob: Job? = null
 
+    /** 当前是否存在仍在撤销窗口内的快照。 */
+    fun hasUndoSnapshot(): Boolean = undoSchedule.value != null
+
     /** 确认占位事件并生成各受影响日期的重排 diff，实际插入延迟到应用阶段。 */
     fun confirmBlockers(parsed: List<ParsedBlocker>) {
         scope.launch {
@@ -112,16 +115,22 @@ class RescheduleFlow(
     /** 在短时窗口内恢复重排前的任务和本次新增 blocker。 */
     fun undoLastReschedule() {
         scope.launch {
-            val snapshot = undoSchedule.value ?: return@launch
-            undoExpiryJob?.cancel()
-            undoSchedule.value = null
-            schedule.undoReschedule(
-                beforeTasks = snapshot.beforeTasks,
-                appliedTasks = snapshot.appliedTasks,
-                insertedBlockers = snapshot.insertedBlockers,
-            )
-            onApplied()
+            undoLastRescheduleNow()
         }
+    }
+
+    /** 供语音技能使用的可等待撤销入口；没有快照时返回 false，不假装撤销成功。 */
+    suspend fun undoLastRescheduleNow(): Boolean {
+        val snapshot = undoSchedule.value ?: return false
+        undoExpiryJob?.cancel()
+        undoSchedule.value = null
+        schedule.undoReschedule(
+            beforeTasks = snapshot.beforeTasks,
+            appliedTasks = snapshot.appliedTasks,
+            insertedBlockers = snapshot.insertedBlockers,
+        )
+        onApplied()
+        return true
     }
 
     /** Snackbar 被动关闭时清掉撤销入口，避免旧操作再次被误用。 */

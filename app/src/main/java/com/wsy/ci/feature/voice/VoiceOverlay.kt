@@ -46,14 +46,24 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.util.TimeFormat
+import com.wsy.ci.core.voice.VoiceTarget
+import com.wsy.ci.core.voice.label
 import com.wsy.ci.core.voice.skill.SkillPreview
+import com.wsy.ci.core.voice.skill.SkillRisk
 
 /**
  * 长按图标录音期间的浮层：无实时文字（sherpa 整段解码没有 partial result），
- * 只用时长和音量条给出正在录音的反馈。上滑取消时整体转 error 色。不可点击关闭。
+ * 只用时长和音量条给出正在录音的反馈。上滑取消时整体转 error 色，
+ * 同时保留结束与取消按钮，供 TalkBack、键盘及不便持续按住的用户完成操作。
  */
 @Composable
-fun VoiceRecordingDialog(elapsedMillis: Long, amplitude: Float, cancelling: Boolean) {
+fun VoiceRecordingDialog(
+    elapsedMillis: Long,
+    amplitude: Float,
+    cancelling: Boolean,
+    onFinish: () -> Unit,
+    onCancel: () -> Unit,
+) {
     val tint = if (cancelling) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
     AlertDialog(
         onDismissRequest = {},
@@ -76,7 +86,12 @@ fun VoiceRecordingDialog(elapsedMillis: Long, amplitude: Float, cancelling: Bool
                 )
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(onClick = onFinish) { Text("结束并识别") }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text("取消录音") }
+        },
     )
 }
 
@@ -86,6 +101,9 @@ fun VoiceConfirmDialog(
     text: String,
     onTextChange: (String) -> Unit,
     preview: SkillPreview?,
+    risk: SkillRisk?,
+    canReinterpret: Boolean,
+    onReinterpret: () -> Unit,
     onExecute: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -108,7 +126,7 @@ fun VoiceConfirmDialog(
                     label = "识别文本",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                SkillPreviewCard(preview)
+                SkillPreviewCard(preview, risk)
             }
         },
         confirmButton = {
@@ -116,7 +134,14 @@ fun VoiceConfirmDialog(
                 Text("执行")
             }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
+        dismissButton = {
+            Row {
+                if (canReinterpret) {
+                    TextButton(onClick = onReinterpret) { Text("重新理解") }
+                }
+                TextButton(onClick = onCancel) { Text("取消") }
+            }
+        },
     )
 }
 
@@ -135,6 +160,78 @@ fun VoiceRecognizingDialog() {
             }
         },
         confirmButton = {},
+    )
+}
+
+/** 模型准备与指令执行都不可中途重复触发，用同一种阻塞式进度反馈。 */
+@Composable
+private fun VoiceProgressDialog(
+    title: String,
+    detail: String,
+    onCancel: (() -> Unit)? = null,
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        shape = CiShapes.dialog,
+        title = { Text(title) },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator()
+                Text(detail, modifier = Modifier.padding(start = CiSpacing.md))
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            if (onCancel != null) TextButton(onClick = onCancel) { Text("取消") }
+        },
+    )
+}
+
+/** 只在第一次手动长按时展示，把操作方式和数据安全边界说清楚。 */
+@Composable
+private fun VoiceFirstUseDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = CiShapes.dialog,
+        icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_ai_schedule, contentDescription = null) },
+        title = { Text("语音指令已就绪") },
+        text = {
+            Text("长按左侧本地 AI 图标说话，松手识别，向上滑动后松手可取消。会改动数据的指令默认先显示预览，危险操作不会自动执行。")
+        },
+        confirmButton = { Button(onClick = onDismiss, shape = CiShapes.pill) { Text("知道了") } },
+    )
+}
+
+/** 同名任务或近音目标的显式消歧。 */
+@Composable
+private fun VoiceDisambiguationDialog(
+    text: String,
+    candidates: List<VoiceTarget>,
+    onChoose: (VoiceTarget) -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        shape = CiShapes.dialog,
+        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        title = { Text("你指的是哪一个？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
+                Text("识别文字：$text", style = MaterialTheme.typography.bodySmall)
+                candidates.forEach { target ->
+                    Button(
+                        onClick = { onChoose(target) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = CiShapes.pill,
+                    ) {
+                        Text("【${target.kind.label}】${target.name}")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
     )
 }
 
@@ -180,14 +277,19 @@ fun VoiceScheduleResultDialog(tasks: List<TaskEntity>, onOpenCalendar: () -> Uni
 
 /** 识别失败 / 权限缺失等错误提示。 */
 @Composable
-fun VoiceErrorDialog(message: String, onDismiss: () -> Unit) {
+fun VoiceErrorDialog(message: String, onDismiss: () -> Unit, onOpenSettings: (() -> Unit)? = null) {
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = CiShapes.dialog,
         icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_warning, contentDescription = null) },
         title = { Text("没能完成") },
         text = { Text(message) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("知道了") } },
+        confirmButton = { Button(onClick = onDismiss, shape = CiShapes.pill) { Text("关闭") } },
+        dismissButton = {
+            if (onOpenSettings != null) {
+                TextButton(onClick = onOpenSettings) { Text("去语音设置") }
+            }
+        },
     )
 }
 
@@ -196,15 +298,37 @@ fun VoiceErrorDialog(message: String, onDismiss: () -> Unit) {
 internal fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
     when (state) {
         VoiceUiState.Idle -> Unit
-        is VoiceUiState.Recording -> VoiceRecordingDialog(state.elapsedMillis, state.amplitude, state.cancelling)
+        VoiceUiState.FirstUse -> VoiceFirstUseDialog(onDismiss = viewModel::dismiss)
+        VoiceUiState.Preparing -> VoiceProgressDialog(
+            title = "正在准备语音",
+            detail = "检查本地模型…",
+            onCancel = viewModel::onVoiceCancel,
+        )
+        is VoiceUiState.Recording -> VoiceRecordingDialog(
+            elapsedMillis = state.elapsedMillis,
+            amplitude = state.amplitude,
+            cancelling = state.cancelling,
+            onFinish = viewModel::onVoiceEnd,
+            onCancel = viewModel::onVoiceCancel,
+        )
         VoiceUiState.Recognizing -> VoiceRecognizingDialog()
+        is VoiceUiState.Disambiguate -> VoiceDisambiguationDialog(
+            text = state.text,
+            candidates = state.candidates,
+            onChoose = viewModel::chooseCandidate,
+            onCancel = viewModel::dismiss,
+        )
         is VoiceUiState.Confirm -> VoiceConfirmDialog(
             text = state.text,
             onTextChange = viewModel::onTextEdited,
             preview = state.preview,
+            risk = state.risk,
+            canReinterpret = state.canReinterpret,
+            onReinterpret = viewModel::reinterpret,
             onExecute = { state.invocation?.let(viewModel::execute) },
             onCancel = viewModel::dismiss,
         )
+        VoiceUiState.Executing -> VoiceProgressDialog("正在执行", "请稍候…")
         is VoiceUiState.ScheduleResult -> VoiceScheduleResultDialog(
             tasks = state.tasks,
             onOpenCalendar = viewModel::openCalendar,
@@ -217,7 +341,11 @@ internal fun VoiceOverlayHost(state: VoiceUiState, viewModel: VoiceViewModel) {
             onGo = { state.navigateTo?.let(viewModel::navigateTo) },
             onDismiss = viewModel::dismiss,
         )
-        is VoiceUiState.Error -> VoiceErrorDialog(message = state.message, onDismiss = viewModel::dismiss)
+        is VoiceUiState.Error -> VoiceErrorDialog(
+            message = state.message,
+            onDismiss = viewModel::dismiss,
+            onOpenSettings = viewModel::openVoiceSettings.takeIf { state.canOpenSettings },
+        )
     }
 }
 
@@ -255,7 +383,7 @@ private fun VoiceSkillResultDialog(
  * 加新 skill 不再需要改这个文件，预览内容由 skill 自己描述。
  */
 @Composable
-private fun SkillPreviewCard(preview: SkillPreview?) {
+private fun SkillPreviewCard(preview: SkillPreview?, risk: SkillRisk?) {
     val errorColor = MaterialTheme.colorScheme.error
     CiPanelCard {
         if (preview == null) {
@@ -265,10 +393,21 @@ private fun SkillPreviewCard(preview: SkillPreview?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
+            val dangerous = preview.dangerous || risk == SkillRisk.DANGEROUS
             Text(
                 text = preview.title,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (preview.dangerous) errorColor else MaterialTheme.colorScheme.onSurface,
+                color = if (dangerous) errorColor else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = when (risk) {
+                    SkillRisk.SAFE -> "只读操作"
+                    SkillRisk.MODERATE -> "会更改数据，可在应用内调整"
+                    SkillRisk.DANGEROUS -> "高风险操作，必须手动确认"
+                    null -> ""
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (dangerous) errorColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             preview.lines.forEach { line ->
                 Text(

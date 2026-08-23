@@ -24,6 +24,8 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
+import com.wsy.ci.core.voice.skill.textOrNull
 import com.wsy.ci.widget.TimerService
 import kotlinx.serialization.json.JsonObject
 
@@ -34,25 +36,28 @@ import kotlinx.serialization.json.JsonObject
 object AbandonTimerSkill : AppSkill {
 
     override val id = "abandon_timer"
-    override val llmSpec = "放弃当前正在计时的专注，不结算奖励；args: {}"
+    override val risk = SkillRisk.MODERATE
+    override val llmSpec = "放弃当前正在计时的专注，按中途放弃系数结算；args: {\"note\":\"可选备注\"}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {
         if (ABANDON_WORDS.none { text.contains(it) }) return null
         return emptyMap()
     }
 
-    override fun parseLlmArgs(args: JsonObject, ctx: SkillRuleContext): SkillArgs? = emptyMap()
+    override fun parseLlmArgs(args: JsonObject, ctx: SkillRuleContext): SkillArgs? = buildMap {
+        args.textOrNull("note", 300)?.let { put("note", it) }
+    }
 
     override fun preview(args: SkillArgs, ctx: SkillRuleContext): SkillPreview =
-        SkillPreview("放弃本次专注", lines = listOf("本次不计奖励"))
+        SkillPreview("放弃本次专注", lines = listOf("按中途放弃系数 ×0.5 结算").plus((args["note"] as? String)?.let { "备注：$it" }.orEmpty().let { if (it.isBlank()) emptyList() else listOf(it) }))
 
     override suspend fun execute(args: SkillArgs, ctx: SkillExecutionContext): SkillOutcome {
-        val settlement = ctx.timer.stopSession(FocusOutcome.ABANDONED)
+        val settlement = ctx.timer.stopSession(FocusOutcome.ABANDONED, args["note"] as? String ?: "")
             ?: return SkillOutcome.Failed("当前没有进行中的专注")
         TimerService.stop(ctx.appContext)
         ctx.updateWidgets()
         return SkillOutcome.Done(
-            message = "已放弃本次专注（${settlement.minutes} 分钟不计奖励）",
+            message = "已放弃本次专注（${settlement.minutes} 分钟，+${settlement.rewardCi} CI）",
             navigateTo = SkillDestination.TODAY,
             title = "已放弃",
         )

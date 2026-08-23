@@ -85,6 +85,7 @@ import com.wsy.ci.localmodel.download.LocalModelDownloadManager
 import com.wsy.ci.localmodel.download.LocalModelDownloadState
 import com.wsy.ci.localmodel.download.LocalModelDownloadStatus
 import com.wsy.ci.localmodel.download.SenseVoiceManifest
+import com.wsy.ci.localmodel.download.KwsModelManifest
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** API Key 卡高度，见逐屏布局规格第 6 节。 */
@@ -92,6 +93,7 @@ private val KEY_CARD_HEIGHT: Dp = 180.dp
 
 private enum class SettingsPane(val label: String) {
     APPEARANCE("外观"),
+    VOICE("语音助手"),
     CLOUD("云端端点"),
     LOCAL("本地模型"),
     BACKUP("数据备份"),
@@ -99,7 +101,7 @@ private enum class SettingsPane(val label: String) {
 }
 
 /** 计费网络确认框服务两个不同的下载器，靠这个区分文案和续传目标。 */
-private enum class MeteredDownloadTarget { QWEN, ASR }
+private enum class MeteredDownloadTarget { QWEN, ASR, KWS }
 
 @Composable
 fun SettingsScreen(
@@ -107,12 +109,19 @@ fun SettingsScreen(
     localModelController: LocalModelController? = null,
     backupController: DataBackupController? = null,
     asrDownloads: LocalModelDownloadManager? = null,
+    kwsDownloads: LocalModelDownloadManager? = null,
+    onStartWakeListening: () -> Unit = {},
+    onStopWakeListening: () -> Unit = {},
+    onClearCorrectionRecords: () -> Unit = {},
 ) {
     val localController = localModelController ?: remember { InMemoryLocalModelController() }
     val dataBackupController = backupController ?: remember { InMemoryBackupController() }
     val localModel by localController.state.collectAsStateWithLifecycle()
     val asrState by (asrDownloads?.state ?: remember {
         MutableStateFlow(LocalModelDownloadState.initial(SenseVoiceManifest.manifest))
+    }).collectAsStateWithLifecycle()
+    val kwsState by (kwsDownloads?.state ?: remember {
+        MutableStateFlow(LocalModelDownloadState.initial(KwsModelManifest.manifest))
     }).collectAsStateWithLifecycle()
     val backupState by dataBackupController.state.collectAsStateWithLifecycle()
     val backupBusy = backupState.backingUp ||
@@ -121,6 +130,12 @@ fun SettingsScreen(
     val routes by viewModel.routes.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val motionMode by viewModel.motionMode.collectAsStateWithLifecycle()
+    val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsStateWithLifecycle()
+    val wakePhrase by viewModel.wakePhrase.collectAsStateWithLifecycle()
+    val ttsEnabled by viewModel.ttsEnabled.collectAsStateWithLifecycle()
+    val autoExecuteLevel by viewModel.voiceAutoExecuteLevel.collectAsStateWithLifecycle()
+    val wakePromptShown by viewModel.wakePromptShown.collectAsStateWithLifecycle()
+    val correctionLearningEnabled by viewModel.correctionLearningEnabled.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -137,6 +152,9 @@ fun SettingsScreen(
     }
     val requestAsrDownload: () -> Unit = {
         if (isMetered()) pendingMeteredTarget = MeteredDownloadTarget.ASR else asrDownloads?.enqueue(false)
+    }
+    val requestKwsDownload: () -> Unit = {
+        if (isMetered()) pendingMeteredTarget = MeteredDownloadTarget.KWS else kwsDownloads?.enqueue(false)
     }
     val openBackupList = {
         if (!backupBusy) {
@@ -198,6 +216,40 @@ fun SettingsScreen(
                             onSelectTheme = viewModel::setThemeMode,
                             onSelectMotion = viewModel::setMotionMode,
                         )
+                        SettingsPane.VOICE -> {
+                            VoiceSettingsCard(
+                                wakeWordEnabled = wakeWordEnabled,
+                                wakePhrase = wakePhrase,
+                                ttsEnabled = ttsEnabled,
+                                autoExecuteLevel = autoExecuteLevel,
+                                wakePromptShown = wakePromptShown,
+                                correctionLearningEnabled = correctionLearningEnabled,
+                                wakeModelReady = kwsState.status == LocalModelDownloadStatus.COMPLETED,
+                                onWakeWordEnabledChange = viewModel::setWakeWordEnabled,
+                                onSaveWakePhrase = viewModel::saveWakePhrase,
+                                onTtsEnabledChange = viewModel::setTtsEnabled,
+                                onAutoExecuteLevelChange = viewModel::setVoiceAutoExecuteLevel,
+                                onWakePromptShownChange = viewModel::setWakePromptShown,
+                                onCorrectionLearningEnabledChange = viewModel::setCorrectionLearningEnabled,
+                                onStartWakeListening = onStartWakeListening,
+                                onStopWakeListening = onStopWakeListening,
+                                onClearCorrectionRecords = onClearCorrectionRecords,
+                            )
+                            VoiceModelDownloadCard(
+                                state = kwsState,
+                                onDownload = requestKwsDownload,
+                                onPause = { kwsDownloads?.pause() },
+                                onResume = requestKwsDownload,
+                                onCancelDownload = { kwsDownloads?.cancel() },
+                                onDelete = {
+                                    onStopWakeListening()
+                                    viewModel.setWakeWordEnabled(false)
+                                    kwsDownloads?.delete()
+                                },
+                                title = "唤醒词模型",
+                                detail = "WenetSpeech Zipformer · sherpa-onnx 离线 · 约 5 MB",
+                            )
+                        }
                         SettingsPane.CLOUD -> {
                             SettingsSectionTitle(
                                 title = "云端端点",
@@ -288,6 +340,7 @@ fun SettingsScreen(
                 val sizeLabel = when (target) {
                     MeteredDownloadTarget.QWEN -> "1.39 GB"
                     MeteredDownloadTarget.ASR -> "166 MB"
+                    MeteredDownloadTarget.KWS -> "5 MB"
                 }
                 Text("模型约 $sizeLabel。本次确认只对当前下载任务生效。")
             },
@@ -297,6 +350,7 @@ fun SettingsScreen(
                     when (target) {
                         MeteredDownloadTarget.QWEN -> localController.download(true)
                         MeteredDownloadTarget.ASR -> asrDownloads?.enqueue(true)
+                        MeteredDownloadTarget.KWS -> kwsDownloads?.enqueue(true)
                     }
                 }) { Text("继续下载") }
             },
@@ -583,6 +637,8 @@ private fun VoiceModelDownloadCard(
     onResume: () -> Unit,
     onCancelDownload: () -> Unit,
     onDelete: () -> Unit,
+    title: String = "语音识别模型",
+    detail: String = "SenseVoice-Small · sherpa-onnx 离线 · 约 166 MB",
 ) {
     CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
         Row(
@@ -591,9 +647,9 @@ private fun VoiceModelDownloadCard(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
-                Text("语音识别模型", style = MaterialTheme.typography.titleMedium)
+                Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "SenseVoice-Small · sherpa-onnx 离线 · 约 166 MB",
+                    detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -23,12 +23,14 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import kotlinx.serialization.json.JsonObject
 
 /** 商城商品查询（只读）：概要在结果弹窗里展示，用户点「去商城」细看再买。 */
 object QueryShopSkill : AppSkill {
 
     override val id = "query_shop"
+    override val risk = SkillRisk.SAFE
     override val llmSpec = "查看商城在售商品；args: {}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {
@@ -43,7 +45,6 @@ object QueryShopSkill : AppSkill {
         SkillPreview("查看商城", lines = listOf("查看在售商品与今日精选"))
 
     override suspend fun execute(args: SkillArgs, ctx: SkillExecutionContext): SkillOutcome {
-        ctx.shop.ensureSeedItems()
         val items = ctx.db.shopDao().activeItems()
         if (items.isEmpty()) {
             return SkillOutcome.Done("商城还没有商品", navigateTo = SkillDestination.SHOP, title = "商城商品")

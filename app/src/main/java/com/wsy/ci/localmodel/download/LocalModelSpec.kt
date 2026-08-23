@@ -58,7 +58,18 @@ object LocalModelSpecs {
         urlOf = { file -> SenseVoiceManifest.url(file) },
     )
 
-    private val all = listOf(QWEN35, SENSE_VOICE)
+    val KWS = LocalModelSpec(
+        id = "kws-wenetspeech-int8",
+        directoryName = "kws-wenetspeech-int8",
+        prefsName = "kws_model_download",
+        workName = "kws-wenetspeech-download",
+        notificationId = 3504,
+        notificationTitle = "正在下载唤醒词模型",
+        manifest = KwsModelManifest.manifest,
+        urlOf = { file -> KwsModelManifest.url(file) },
+    )
+
+    private val all = listOf(QWEN35, SENSE_VOICE, KWS)
 
     fun byId(id: String): LocalModelSpec? = all.firstOrNull { it.id == id }
 }

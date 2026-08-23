@@ -25,6 +25,7 @@ import com.wsy.ci.core.voice.skill.SkillExecutionContext
 import com.wsy.ci.core.voice.skill.SkillOutcome
 import com.wsy.ci.core.voice.skill.SkillPreview
 import com.wsy.ci.core.voice.skill.SkillRuleContext
+import com.wsy.ci.core.voice.skill.SkillRisk
 import com.wsy.ci.core.voice.skill.targetIdOrNull
 import com.wsy.ci.core.voice.skill.targetOrNull
 import kotlinx.serialization.json.JsonObject
@@ -33,6 +34,7 @@ import kotlinx.serialization.json.JsonObject
 object SkipTaskSkill : AppSkill {
 
     override val id = "skip_task"
+    override val risk = SkillRisk.MODERATE
     override val llmSpec = "把一个任务标记为已跳过；args: {\"targetId\": 候选清单里的数字id}"
 
     override fun matchRule(text: String, ctx: SkillRuleContext): SkillArgs? {
