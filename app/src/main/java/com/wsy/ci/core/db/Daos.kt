@@ -183,10 +183,6 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE endAt IS NULL ORDER BY startAt DESC LIMIT 1")
     suspend fun openSession(): SessionEntity?
 
-    /** 已结束 session 的起始时刻，算连续打卡天数用（毫秒转 epochDay 在 Kotlin 侧做，避开时区）。 */
-    @Query("SELECT startAt FROM sessions WHERE endAt IS NOT NULL AND startAt >= :from")
-    suspend fun completedStartsSince(from: Long): List<Long>
-
     @Query("SELECT * FROM sessions WHERE endAt IS NULL ORDER BY startAt DESC LIMIT 1")
     fun observeOpenSession(): Flow<SessionEntity?>
 
@@ -243,6 +239,13 @@ interface LedgerDao {
      */
     @Query("SELECT COUNT(*) FROM ledger WHERE type = 'EARN_STREAK' AND refId = :epochDay")
     suspend fun checkinCount(epochDay: Long): Int
+
+    /** 已发过奖励的打卡日期；流水在删除专注记录后仍保留，因此也是稳定的历史打卡证据。 */
+    @Query(
+        "SELECT refId FROM ledger WHERE type = 'EARN_STREAK' " +
+            "AND refId IS NOT NULL AND refId >= :fromEpochDay"
+    )
+    suspend fun checkinEpochDaysSince(fromEpochDay: Long): List<Long>
 
     /** 某主线的复利结算是否已发过，DONE↔ACTIVE 反复切换时靠它去重。 */
     @Query("SELECT COUNT(*) FROM ledger WHERE type = 'EARN_QUEST_DONE' AND refId = :questId")

@@ -148,6 +148,13 @@ object Economy {
         return count
     }
 
+    /**
+     * 今天首次打卡后的连续天数。[previousCheckinDays] 是此前已落账的打卡日期，
+     * 今天正在当前事务里结算、尚未写入流水，因此先补入 [today] 再回溯。
+     */
+    fun checkinStreakAfterToday(previousCheckinDays: Set<Long>, today: Long): Int =
+        checkinStreak(previousCheckinDays + today, today)
+
     /** 领域经验 = 实际专注分钟 × 难度系数（经验只增不减，与 CI 币双轨）。 */
     fun expGain(actualMinutes: Int, difficulty: Difficulty): Long {
         if (actualMinutes <= 0) return 0

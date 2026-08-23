@@ -85,4 +85,18 @@ class CheckinTest {
 
         assertEquals(2, Economy.checkinStreak(days, 20_662L))
     }
+
+    @Test
+    fun `昨日专注记录已删除但打卡流水保留时今天续为2天`() {
+        val previousCheckinDays = setOf(20_661L)
+
+        assertEquals(2, Economy.checkinStreakAfterToday(previousCheckinDays, 20_662L))
+    }
+
+    @Test
+    fun `历史打卡与今天不连续时今天重置为1天`() {
+        val previousCheckinDays = setOf(20_659L, 20_660L)
+
+        assertEquals(1, Economy.checkinStreakAfterToday(previousCheckinDays, 20_662L))
+    }
 }

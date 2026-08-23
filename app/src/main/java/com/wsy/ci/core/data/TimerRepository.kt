@@ -29,7 +29,6 @@ import com.wsy.ci.core.economy.FocusOutcome
 import com.wsy.ci.core.scheduler.alignedToNow
 import com.wsy.ci.core.scheduler.endedAt
 import com.wsy.ci.core.util.TimeFormat
-import java.time.LocalDate
 import kotlin.math.roundToInt
 
 /** 连续打卡回溯窗口：一年多，足够覆盖任何现实中的连续记录。 */
@@ -107,9 +106,10 @@ class TimerRepository(private val db: CiDatabase) {
             val minutes = ((now - session.startAt) / 60_000.0).roundToInt().coerceAtLeast(0)
             val task = session.taskId?.let { db.taskDao().byId(it) }
             val difficulty = task?.difficulty ?: Difficulty.NORMAL
+            val today = TimeFormat.millisToEpochDay(now)
 
             // 有任务以任务的归属为准，没有任务就用 session 上记的任务线（支线直接打卡）
-            val streakDays = updateStreakAndGet(task?.questId ?: session.questId, focus)
+            val streakDays = updateStreakAndGet(task?.questId ?: session.questId, focus, today)
             val reward = Economy.taskReward(minutes, difficulty, focus, streakDays)
             val exp = Economy.expGain(minutes, difficulty)
 
@@ -140,7 +140,7 @@ class TimerRepository(private val db: CiDatabase) {
                 )
             }
             val levelUp = settleExp(session.domainId ?: task?.domainId, exp)
-            val (checkinStreak, checkinReward) = settleCheckin(now, focus)
+            val (checkinStreak, checkinReward) = settleCheckin(today, focus)
             Settlement(
                 minutes = minutes,
                 rewardCi = reward,
@@ -191,22 +191,19 @@ class TimerRepository(private val db: CiDatabase) {
      * 每日打卡结算：当天首次完成专注时发一笔定额奖，连续天数越长越高。
      * 返回 (连续天数, 奖励)，今天已领过或不该发时返回 0 to 0。
      *
-     * 连续天数直接从 sessions 推导、发没发过靠 ledger 去重，
-     * 所以这套机制没有引入任何新表或新字段。
+     * 已发出的打卡流水既用于去重，也作为历史打卡的持久证据；删除单条专注记录时
+     * 打卡奖不会撤回，因此连续天数也不能随 session 一起消失。
      *
-     * 放弃不算打卡——那天没有真正的投入。注意本次 session 的 endAt
-     * 在调用前已经写好了，所以今天会被算进 daysWithFocus。
+     * 放弃不算打卡——那天没有真正的投入。
      */
-    private suspend fun settleCheckin(nowMillis: Long, focus: FocusOutcome): Pair<Int, Long> {
+    private suspend fun settleCheckin(today: Long, focus: FocusOutcome): Pair<Int, Long> {
         if (focus == FocusOutcome.ABANDONED) return 0 to 0
-        val today = TimeFormat.millisToEpochDay(nowMillis)
         if (db.ledgerDao().checkinCount(today) > 0) return 0 to 0
 
-        val since = TimeFormat.dayStartMillis(today - CHECKIN_LOOKBACK_DAYS)
-        val daysWithFocus = db.sessionDao().completedStartsSince(since)
-            .map { TimeFormat.millisToEpochDay(it) }
+        val previousCheckinDays = db.ledgerDao()
+            .checkinEpochDaysSince(today - CHECKIN_LOOKBACK_DAYS)
             .toSet()
-        val streak = Economy.checkinStreak(daysWithFocus, today)
+        val streak = Economy.checkinStreakAfterToday(previousCheckinDays, today)
         val reward = Economy.checkinReward(streak)
         if (reward <= 0) return 0 to 0
 
@@ -252,11 +249,14 @@ class TimerRepository(private val db: CiDatabase) {
     }
 
     /** 支线打卡：今天首次完成则连击 +1（昨天没打卡则重置为 1）。返回结算用连击天数。 */
-    private suspend fun updateStreakAndGet(questId: Long?, focus: FocusOutcome): Int {
+    private suspend fun updateStreakAndGet(
+        questId: Long?,
+        focus: FocusOutcome,
+        today: Long,
+    ): Int {
         if (questId == null || focus == FocusOutcome.ABANDONED) return 0
         val quest = db.questDao().byId(questId) ?: return 0
         if (quest.type != QuestType.SIDE) return 0
-        val today = LocalDate.now().toEpochDay()
         val newStreak = when (quest.lastDoneEpochDay) {
             today -> return quest.streakDays
             today - 1 -> quest.streakDays + 1
