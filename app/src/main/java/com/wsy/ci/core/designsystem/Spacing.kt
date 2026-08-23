@@ -62,6 +62,9 @@ object CiSizes {
     val navRailIcon = 28.dp
     val navRailAiIcon = 48.dp
 
+    /** 手机底部导航栏高度；根布局会为业务页面预留这段空间。 */
+    val bottomNavigationHeight = 80.dp
+
     /** 手绘功能图标尺寸：源图留白较多，显示框需略大于普通字形。 */
     val actionIcon = 28.dp
     val compactIcon = 22.dp

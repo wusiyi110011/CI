@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.wsy.ci.feature.today
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +34,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -50,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -73,18 +79,64 @@ import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiLegendDot
 import com.wsy.ci.core.designsystem.CiPanelCard
 import com.wsy.ci.core.designsystem.CiScreenHeader
+import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.economy.Difficulty
 import com.wsy.ci.core.timeline.MINUTES_PER_DAY
 import com.wsy.ci.core.util.TimeFormat
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.delay
+
+private enum class CompactTodayPane(val label: String) {
+    TIMELINE("时间线"),
+    LEDGER("流水"),
+}
+
+@Composable
+private fun CompactTodayHeader(
+    subtitle: String,
+    balance: Long,
+    onFreeFocus: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "今日", style = CiTextStyles.pageTitle)
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            CiBalanceChip(balance)
+        }
+        TextButton(
+            onClick = onFreeFocus,
+            modifier = Modifier.align(Alignment.End),
+            contentPadding = PaddingValues(horizontal = CiSpacing.xs, vertical = CiSpacing.xxs),
+        ) {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_focus_timer,
+                contentDescription = null,
+                modifier = Modifier.size(CiSizes.compactIcon),
+            )
+            Text("自由专注", modifier = Modifier.padding(start = CiSpacing.xxs))
+        }
+    }
+}
 
 @Composable
 fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
@@ -108,6 +160,8 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
     /** 正在补录的自由专注：没有任务可点，就地给这段时间补一个。 */
     var freeSession by remember { mutableStateOf<SessionEntity?>(null) }
     var showStopDialog by remember { mutableStateOf(false) }
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
+    var compactPane by rememberSaveable { mutableStateOf(CompactTodayPane.TIMELINE) }
     val snackbar = remember { SnackbarHostState() }
 
     // 应用重排后只在短时间内提供撤销，动作实际由 ViewModel 恢复内存快照。
@@ -152,31 +206,40 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(CiSpacing.lg),
+            modifier = Modifier.fillMaxSize().padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
         ) {
-            CiScreenHeader(
-                title = "今日",
-                subtitle = "${TimeFormat.date(todayEpochDay)} · 今日已完成 " +
-                    "${tasks.count { it.epochDay == todayEpochDay && it.status == TaskStatus.DONE }} / " +
-                    "${tasks.count { it.epochDay == todayEpochDay }}",
-                trailing = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-                    ) {
-                        CiBalanceChip(balance)
-                        TextButton(onClick = { viewModel.startTimer(null) }) {
-                            CiFunctionIcon(
-                                resourceId = R.drawable.ic_ci_focus_timer,
-                                contentDescription = null,
-                                modifier = Modifier.size(CiSizes.compactIcon),
-                            )
-                            Text("自由专注", modifier = Modifier.padding(start = CiSpacing.xxs))
+            val completedSummary = "${TimeFormat.date(todayEpochDay)} · 今日已完成 " +
+                "${tasks.count { it.epochDay == todayEpochDay && it.status == TaskStatus.DONE }} / " +
+                "${tasks.count { it.epochDay == todayEpochDay }}"
+            if (isCompact) {
+                CompactTodayHeader(
+                    subtitle = completedSummary,
+                    balance = balance,
+                    onFreeFocus = { viewModel.startTimer(null) },
+                )
+            } else {
+                CiScreenHeader(
+                    title = "今日",
+                    subtitle = completedSummary,
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            CiBalanceChip(balance)
+                            TextButton(onClick = { viewModel.startTimer(null) }) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_focus_timer,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                                Text("自由专注", modifier = Modifier.padding(start = CiSpacing.xxs))
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
 
             running?.let { session ->
                 RunningCard(
@@ -187,15 +250,18 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                     elapsedMillis = effectiveNow - session.startAt,
                     isStopping = stopRequestedAt != null,
                     onStop = { showStopDialog = true },
+                    compact = isCompact,
                 )
             } ?: IdleFocusCard(
                 nextTask = nextTask,
                 onStart = { nextTask?.let(viewModel::startTimer) ?: viewModel.startTimer(null) },
+                compact = isCompact,
             )
 
             NlAdjustRow(
                 loading = nlState is TodayViewModel.NlState.Loading,
                 onSubmit = viewModel::parseNl,
+                compact = isCompact,
             )
 
             val conflictCount = remember(segments) { timelineConflictCount(segments) }
@@ -203,40 +269,86 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
                 blockers = blockers.size,
                 conflicts = conflictCount,
             )
-            BlockerSummary(blockers)
+            BlockerSummary(blockers, compact = isCompact)
 
-            Row(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
-            ) {
+            if (isCompact) {
                 Column(
-                    modifier = Modifier.weight(0.62f).fillMaxHeight(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                 ) {
-                    DayTimeline(
+                    CiSegmentedControl(
+                        options = CompactTodayPane.entries,
+                        selected = compactPane,
+                        label = { it.label },
+                        onSelect = { compactPane = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    when (compactPane) {
+                        CompactTodayPane.TIMELINE -> Column(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            DayTimeline(
+                                segments = segments,
+                                actuals = actualBlocks,
+                                blockers = blockers,
+                                onTaskClick = { detailTask = it },
+                                // 实际轨：挂了任务的点开任务卡，自由专注点开补录卡（给它补个名字就成了任务）
+                                onActualClick = { block ->
+                                    val session = sessions.firstOrNull { it.id == block.sessionId }
+                                    val task = session?.taskId?.let { id ->
+                                        (tasks + listOfNotNull(runningTask)).firstOrNull { it.id == id }
+                                    }
+                                    if (task != null) detailTask = task else freeSession = session
+                                },
+                                nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
+                                scrollIdentity = todayEpochDay,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            )
+                            TimelineLegend(compact = true)
+                        }
+                        CompactTodayPane.LEDGER -> TodayLedger(
+                            segments = segments,
+                            actuals = actualBlocks,
+                            scrollable = true,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+                ) {
+                    Column(
+                        modifier = Modifier.weight(0.62f).fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        DayTimeline(
+                            segments = segments,
+                            actuals = actualBlocks,
+                            blockers = blockers,
+                            onTaskClick = { detailTask = it },
+                            // 实际轨：挂了任务的点开任务卡，自由专注点开补录卡（给它补个名字就成了任务）
+                            onActualClick = { block ->
+                                val session = sessions.firstOrNull { it.id == block.sessionId }
+                                val task = session?.taskId?.let { id ->
+                                    (tasks + listOfNotNull(runningTask)).firstOrNull { it.id == id }
+                                }
+                                if (task != null) detailTask = task else freeSession = session
+                            },
+                            nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
+                            scrollIdentity = todayEpochDay,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                        TimelineLegend()
+                    }
+                    TodayLedger(
                         segments = segments,
                         actuals = actualBlocks,
-                        blockers = blockers,
-                        onTaskClick = { detailTask = it },
-                        // 实际轨：挂了任务的点开任务卡，自由专注点开补录卡（给它补个名字就成了任务）
-                        onActualClick = { block ->
-                            val session = sessions.firstOrNull { it.id == block.sessionId }
-                            val task = session?.taskId?.let { id ->
-                                (tasks + listOfNotNull(runningTask)).firstOrNull { it.id == id }
-                            }
-                            if (task != null) detailTask = task else freeSession = session
-                        },
-                        nowMinute = LocalTime.now().let { it.hour * 60 + it.minute },
-                        scrollIdentity = todayEpochDay,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier.weight(0.38f).fillMaxHeight(),
                     )
-                    TimelineLegend()
                 }
-                TodayLedger(
-                    segments = segments,
-                    actuals = actualBlocks,
-                    modifier = Modifier.weight(0.38f).fillMaxHeight(),
-                )
             }
         }
 
@@ -257,7 +369,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(CiSpacing.lg)
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg)
                 .size(CiSizes.fab),
         ) {
             CiFunctionIcon(
@@ -270,7 +382,7 @@ fun TodayScreen(viewModel: TodayViewModel = viewModel()) {
             hostState = snackbar,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(CiSpacing.lg),
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
         )
     }
 
@@ -373,6 +485,7 @@ private fun RunningCard(
     elapsedMillis: Long,
     isStopping: Boolean,
     onStop: () -> Unit,
+    compact: Boolean = false,
 ) {
     // 没有具体任务时（对着支线直接打卡），任务线从 session 上取
     val quest = quests.firstOrNull { it.id == (task?.questId ?: session.questId) }
@@ -380,58 +493,115 @@ private fun RunningCard(
 
     CiPanelCard(
         modifier = Modifier.fillMaxWidth().height(CiSizes.timerCardHeight),
-        contentPadding = 20.dp,
+        contentPadding = if (compact) CiSpacing.md else 20.dp,
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
+        if (compact) {
             Column(
-                modifier = Modifier.widthIn(max = 260.dp),
-                verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                CiChip(
-                    text = focusScopeLabel(quest, domain, task),
-                    container = MaterialTheme.colorScheme.secondaryContainer,
-                    content = MaterialTheme.colorScheme.onSecondaryContainer,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Text(
-                    text = task?.title ?: quest?.title ?: "自由专注",
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        CiChip(
+                            text = focusScopeLabel(quest, domain, task),
+                            container = MaterialTheme.colorScheme.secondaryContainer,
+                            content = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            text = task?.title ?: quest?.title ?: "自由专注",
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = TimeFormat.elapsed(elapsedMillis),
+                        style = CiTextStyles.timer,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onStop,
+                    enabled = !isStopping,
+                    shape = CiShapes.pill,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    border = BorderStroke(CiSizes.border, MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_stop,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                    Text(
+                        if (isStopping) "结算中" else "结束",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = CiSpacing.xs),
+                    )
+                }
             }
-            Text(
-                text = TimeFormat.elapsed(elapsedMillis),
-                style = CiTextStyles.timer,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            OutlinedButton(
-                onClick = onStop,
-                enabled = !isStopping,
-                shape = CiShapes.pill,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
-                border = BorderStroke(CiSizes.border, MaterialTheme.colorScheme.error),
-                contentPadding = PaddingValues(
-                    horizontal = 30.dp,
-                    vertical = 14.dp,
-                ),
+        } else {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_stop,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.compactIcon),
-                )
+                Column(
+                    modifier = Modifier.widthIn(max = 260.dp),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    CiChip(
+                        text = focusScopeLabel(quest, domain, task),
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        text = task?.title ?: quest?.title ?: "自由专注",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
-                    if (isStopping) "结算中" else "结束",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(start = CiSpacing.xs),
+                    text = TimeFormat.elapsed(elapsedMillis),
+                    style = CiTextStyles.timer,
+                    color = MaterialTheme.colorScheme.secondary,
                 )
+                OutlinedButton(
+                    onClick = onStop,
+                    enabled = !isStopping,
+                    shape = CiShapes.pill,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    border = BorderStroke(CiSizes.border, MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(
+                        horizontal = 30.dp,
+                        vertical = 14.dp,
+                    ),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_stop,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                    Text(
+                        if (isStopping) "结算中" else "结束",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = CiSpacing.xs),
+                    )
+                }
             }
         }
     }
@@ -458,58 +628,117 @@ private fun focusScopeLabel(
 
 /** 无进行中专注时占住计时卡的位置，保持屏内布局稳定。 */
 @Composable
-private fun IdleFocusCard(nextTask: TaskEntity?, onStart: () -> Unit) {
+private fun IdleFocusCard(nextTask: TaskEntity?, onStart: () -> Unit, compact: Boolean = false) {
     CiPanelCard(
         modifier = Modifier.fillMaxWidth().height(CiSizes.timerCardHeight),
-        contentPadding = 20.dp,
+        contentPadding = if (compact) CiSpacing.md else 20.dp,
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                CiChip(
-                    text = "未在专注",
-                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    content = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Text(
-                    text = nextTask?.let {
-                        "${TimeFormat.minuteOfDay(it.startMinute)} · ${it.title} · ${it.difficulty.label}"
-                    } ?: "今天还没有计划，先开始一段自由专注",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = "00:00",
-                style = CiTextStyles.timer,
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Button(
-                onClick = onStart,
-                shape = CiShapes.pill,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiary,
-                    contentColor = MaterialTheme.colorScheme.onTertiary,
-                ),
-                contentPadding = PaddingValues(
-                    horizontal = 24.dp,
-                    vertical = 14.dp,
-                ),
+        if (compact) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_focus_timer,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.compactIcon),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        CiChip(
+                            text = "未在专注",
+                            container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            content = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            text = nextTask?.let {
+                                "${TimeFormat.minuteOfDay(it.startMinute)} · ${it.title} · ${it.difficulty.label}"
+                            } ?: "今天还没有计划，先开始一段自由专注",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = "00:00",
+                        style = CiTextStyles.timer,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
+                Button(
+                    onClick = onStart,
+                    shape = CiShapes.pill,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary,
+                    ),
+                    contentPadding = PaddingValues(vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_focus_timer,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                    Text(
+                        if (nextTask == null) "自由专注" else "开始下一项",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = CiSpacing.xs),
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                    CiChip(
+                        text = "未在专注",
+                        container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        content = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        text = nextTask?.let {
+                            "${TimeFormat.minuteOfDay(it.startMinute)} · ${it.title} · ${it.difficulty.label}"
+                        } ?: "今天还没有计划，先开始一段自由专注",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
-                    if (nextTask == null) "自由专注" else "开始下一项",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(start = CiSpacing.xs),
+                    text = "00:00",
+                    style = CiTextStyles.timer,
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
+                Button(
+                    onClick = onStart,
+                    shape = CiShapes.pill,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary,
+                    ),
+                    contentPadding = PaddingValues(
+                        horizontal = 24.dp,
+                        vertical = 14.dp,
+                    ),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_focus_timer,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                    Text(
+                        if (nextTask == null) "自由专注" else "开始下一项",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = CiSpacing.xs),
+                    )
+                }
             }
         }
     }
@@ -520,6 +749,7 @@ private fun IdleFocusCard(nextTask: TaskEntity?, onStart: () -> Unit) {
 private fun TodayLedger(
     segments: List<com.wsy.ci.core.timeline.TaskSegment>,
     actuals: List<ActualBlock>,
+    scrollable: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val pending = segments
@@ -529,6 +759,7 @@ private fun TodayLedger(
         modifier = modifier
             .clip(CiShapes.field)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
+            .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
             .padding(CiSpacing.md),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
     ) {
@@ -622,7 +853,7 @@ private fun LedgerRow(
  * 避免任务绘制层叠后用户只看到「为什么没法排」而看不到具体原因。
  */
 @Composable
-private fun BlockerSummary(blockers: List<BlockerEntity>) {
+private fun BlockerSummary(blockers: List<BlockerEntity>, compact: Boolean = false) {
     if (blockers.isEmpty()) return
     Column(
         modifier = Modifier
@@ -633,81 +864,150 @@ private fun BlockerSummary(blockers: List<BlockerEntity>) {
         verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
     ) {
         Text(
-            text = "锁定时段（任务不会安排在这里）",
+            text = if (compact) {
+                "${blockers.size} 个锁定时段已显示在时间线中"
+            } else {
+                "锁定时段（任务不会安排在这里）"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        blockers.forEach { blocker ->
-            Text(
-                text = "${TimeFormat.minuteOfDay(blocker.startMinute)}–" +
-                    "${TimeFormat.minuteOfDay(blocker.endMinute)} · " +
-                    blocker.title.ifBlank { "不可安排" },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        if (!compact) {
+            blockers.forEach { blocker ->
+                Text(
+                    text = "${TimeFormat.minuteOfDay(blocker.startMinute)}–" +
+                        "${TimeFormat.minuteOfDay(blocker.endMinute)} · " +
+                        blocker.title.ifBlank { "不可安排" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 /** 一句话调整行：输入框 + AI 重排按钮。 */
 @Composable
-private fun NlAdjustRow(loading: Boolean, onSubmit: (String) -> Unit) {
+private fun NlAdjustRow(
+    loading: Boolean,
+    onSubmit: (String) -> Unit,
+    compact: Boolean = false,
+) {
     var text by remember { mutableStateOf("") }
-    Row(
-        modifier = Modifier.fillMaxWidth().height(CiSizes.fieldHeight),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-    ) {
-        CiTextField(
-            value = text,
-            onValueChange = { text = it },
-            placeholder = "用一句话说明变化，例如：下午2点后要出门",
-            modifier = Modifier.weight(1f),
-        )
-        Button(
-            onClick = { onSubmit(text); text = "" },
-            enabled = !loading && text.isNotBlank(),
-            shape = CiShapes.pill,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            ),
-            contentPadding = PaddingValues(
-                horizontal = 22.dp,
-                vertical = CiSpacing.sm,
-            ),
+    if (compact) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(CiSizes.fieldHeight),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
         ) {
-            if (!loading) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_ai_schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.compactIcon),
+            CiTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = "用一句话说明变化，例如：下午2点后要出门",
+                modifier = Modifier.weight(1f),
+            )
+            Button(
+                onClick = { onSubmit(text); text = "" },
+                enabled = !loading && text.isNotBlank(),
+                shape = CiShapes.pill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ),
+                contentPadding = PaddingValues(horizontal = CiSpacing.sm),
+            ) {
+                if (!loading) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_ai_schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                }
+                Text(
+                    text = if (loading) "解析中" else "重排",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = if (loading) Modifier else Modifier.padding(start = CiSpacing.xs),
                 )
             }
-            Text(
-                text = if (loading) "解析中…" else "AI 重排",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = if (loading) Modifier else Modifier.padding(start = CiSpacing.xs),
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(CiSizes.fieldHeight),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+        ) {
+            CiTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = "用一句话说明变化，例如：下午2点后要出门",
+                modifier = Modifier.weight(1f),
             )
+            Button(
+                onClick = { onSubmit(text); text = "" },
+                enabled = !loading && text.isNotBlank(),
+                shape = CiShapes.pill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 22.dp,
+                    vertical = CiSpacing.sm,
+                ),
+            ) {
+                if (!loading) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_ai_schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.compactIcon),
+                    )
+                }
+                Text(
+                    text = if (loading) "解析中…" else "AI 重排",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = if (loading) Modifier else Modifier.padding(start = CiSpacing.xs),
+                )
+            }
         }
     }
 }
 
 /** 图例行：4 档难度 chip + 4 态圆点。 */
 @Composable
-private fun TimelineLegend() {
+private fun TimelineLegend(compact: Boolean = false) {
     val colors = CiTheme.colors
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
-    ) {
-        LegendCaption("难度")
-        Difficulty.entries.forEach { CiDifficultyChip(it) }
-        LegendCaption("状态", startPadding = CiSpacing.sm)
-        TaskStatus.entries.forEach { CiLegendDot(colors.taskBlock(it).accent, it.label) }
+    if (compact) {
+        Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+            LegendCaption("难度")
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+            ) {
+                Difficulty.entries.forEach { CiDifficultyChip(it) }
+            }
+            LegendCaption("状态")
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+            ) {
+                TaskStatus.entries.forEach { CiLegendDot(colors.taskBlock(it).accent, it.label) }
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+        ) {
+            LegendCaption("难度")
+            Difficulty.entries.forEach { CiDifficultyChip(it) }
+            LegendCaption("状态", startPadding = CiSpacing.sm)
+            TaskStatus.entries.forEach { CiLegendDot(colors.taskBlock(it).accent, it.label) }
+        }
     }
 }
 

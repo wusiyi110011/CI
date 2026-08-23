@@ -70,6 +70,8 @@ import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextStyles
 import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.designsystem.TaskBlockColors
 import com.wsy.ci.core.economy.FocusOutcome
@@ -296,39 +298,59 @@ internal fun TimelineFeedback(
     modifier: Modifier = Modifier,
 ) {
     if (blockers == 0 && conflicts == 0 && unplaced.isEmpty()) return
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(CiShapes.field)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-    ) {
-        if (blockers > 0) {
-            Text(
-                text = "已锁定 $blockers 个占位时段（不进入结算）",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    val contentModifier = modifier
+        .fillMaxWidth()
+        .clip(CiShapes.field)
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xs)
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
+    if (isCompact) {
+        Column(
+            modifier = contentModifier,
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+        ) {
+            TimelineFeedbackText(blockers, conflicts, unplaced)
         }
-        if (conflicts > 0) {
-            Text(
-                text = "有 $conflicts 项任务时间重叠，请点开任务调整",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+    } else {
+        Row(
+            modifier = contentModifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+        ) {
+            TimelineFeedbackText(blockers, conflicts, unplaced)
         }
-        if (unplaced.isNotEmpty()) {
-            Text(
-                text = "有 ${unplaced.size} 项任务未安置：" +
-                    unplaced.joinToString("、") { it.title },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+    }
+}
+
+@Composable
+private fun TimelineFeedbackText(
+    blockers: Int,
+    conflicts: Int,
+    unplaced: List<TaskEntity>,
+) {
+    if (blockers > 0) {
+        Text(
+            text = "已锁定 $blockers 个占位时段（不进入结算）",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (conflicts > 0) {
+        Text(
+            text = "有 $conflicts 项任务时间重叠，请点开任务调整",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    if (unplaced.isNotEmpty()) {
+        Text(
+            text = "有 ${unplaced.size} 项任务未安置：" +
+                unplaced.joinToString("、") { it.title },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

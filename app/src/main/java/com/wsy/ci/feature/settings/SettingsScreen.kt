@@ -23,6 +23,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -76,6 +78,8 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.settings.ThemeMode
 import com.wsy.ci.core.settings.MotionMode
 import com.wsy.ci.llm.LlmEndpoints
@@ -104,6 +108,7 @@ private enum class SettingsPane(val label: String) {
 private enum class MeteredDownloadTarget { QWEN, ASR, KWS }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
     localModelController: LocalModelController? = null,
@@ -114,6 +119,7 @@ fun SettingsScreen(
     onStopWakeListening: () -> Unit = {},
     onClearCorrectionRecords: () -> Unit = {},
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     val localController = localModelController ?: remember { InMemoryLocalModelController() }
     val dataBackupController = backupController ?: remember { InMemoryBackupController() }
     val localModel by localController.state.collectAsStateWithLifecycle()
@@ -181,12 +187,12 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(CiSpacing.lg),
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
             CiScreenHeader(
                 title = "设置",
-                subtitle = "API Key 仅存本机 Keystore 加密存储",
+                subtitle = if (isCompact) null else "API Key 仅存本机 Keystore 加密存储",
                 trailing = {
                     CiChip(
                         text = "本地优先",
@@ -196,17 +202,31 @@ fun SettingsScreen(
                 },
             )
 
+            if (isCompact) {
+                SettingsMenu(
+                    selected = selectedPane,
+                    onSelect = { selectedPane = it },
+                    compact = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
             ) {
-                SettingsMenu(
-                    selected = selectedPane,
-                    onSelect = { selectedPane = it },
-                    modifier = Modifier.width(CiSizes.settingsMenuWidth).fillMaxHeight(),
-                )
+                if (!isCompact) {
+                    SettingsMenu(
+                        selected = selectedPane,
+                        onSelect = { selectedPane = it },
+                        modifier = Modifier.width(CiSizes.settingsMenuWidth).fillMaxHeight(),
+                    )
+                }
                 Column(
-                    modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
                 ) {
                     when (selectedPane) {
@@ -234,6 +254,7 @@ fun SettingsScreen(
                                 onStartWakeListening = onStartWakeListening,
                                 onStopWakeListening = onStopWakeListening,
                                 onClearCorrectionRecords = onClearCorrectionRecords,
+                                compact = isCompact,
                             )
                             VoiceModelDownloadCard(
                                 state = kwsState,
@@ -248,6 +269,7 @@ fun SettingsScreen(
                                 },
                                 title = "唤醒词模型",
                                 detail = "WenetSpeech Zipformer · sherpa-onnx 离线 · 约 5 MB",
+                                compact = isCompact,
                             )
                         }
                         SettingsPane.CLOUD -> {
@@ -255,7 +277,29 @@ fun SettingsScreen(
                                 title = "云端端点",
                                 detail = "Key 仅保存于本机加密存储，连接测试不会改动任务路由。",
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
+                            if (isCompact) {
+                                Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
+                                    KeyCard(
+                                        name = "DeepSeek",
+                                        detail = "V4 Pro 复杂推理 / V4 Flash 轻量任务共用",
+                                        configured = keyConfigured[LlmEndpoints.KEY_DEEPSEEK] == true,
+                                        testing = testing,
+                                        onSave = { viewModel.saveKey(LlmEndpoints.KEY_DEEPSEEK, it) },
+                                        onTest = { viewModel.testEndpoint(LlmEndpoints.DEEPSEEK_FLASH.id) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    KeyCard(
+                                        name = "MiMo 小米",
+                                        detail = "V2.5 视觉理解",
+                                        configured = keyConfigured[LlmEndpoints.KEY_MIMO] == true,
+                                        testing = testing,
+                                        onSave = { viewModel.saveKey(LlmEndpoints.KEY_MIMO, it) },
+                                        onTest = { viewModel.testEndpoint(LlmEndpoints.MIMO.id) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
                                 KeyCard(
                                     name = "DeepSeek",
                                     detail = "V4 Pro 复杂推理 / V4 Flash 轻量任务共用",
@@ -274,6 +318,7 @@ fun SettingsScreen(
                                     onTest = { viewModel.testEndpoint(LlmEndpoints.MIMO.id) },
                                     modifier = Modifier.weight(1f),
                                 )
+                                }
                             }
                         }
                         SettingsPane.LOCAL -> {
@@ -297,6 +342,7 @@ fun SettingsScreen(
                                 onBackup = dataBackupController::createBackup,
                                 onOpenImport = openBackupList,
                                 showBackup = false,
+                                compact = isCompact,
                             )
                             VoiceModelDownloadCard(
                                 state = asrState,
@@ -305,6 +351,7 @@ fun SettingsScreen(
                                 onResume = requestAsrDownload,
                                 onCancelDownload = { asrDownloads?.cancel() },
                                 onDelete = { asrDownloads?.delete() },
+                                compact = isCompact,
                             )
                         }
                         SettingsPane.BACKUP -> {
@@ -317,6 +364,7 @@ fun SettingsScreen(
                                     state = backupState,
                                     onBackup = dataBackupController::createBackup,
                                     onOpenImport = openBackupList,
+                                    compact = isCompact,
                                 )
                             }
                         }
@@ -324,6 +372,7 @@ fun SettingsScreen(
                             routes = routes,
                             localInstalled = localModel.installState == LocalModelInstallState.INSTALLED,
                             onSelect = viewModel::setRoute,
+                            compact = isCompact,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -439,31 +488,67 @@ private fun SettingsSectionTitle(title: String, detail: String) {
 private fun SettingsMenu(
     selected: SettingsPane,
     onSelect: (SettingsPane) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     CiPanelCard(modifier = modifier, contentPadding = CiSpacing.xs) {
-        SettingsPane.entries.forEach { pane ->
-            val active = pane == selected
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = CiSizes.fieldHeight)
-                    .clip(CiShapes.field)
-                    .background(
-                        if (active) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                    )
-                    .selectable(selected = active, role = Role.Tab, onClick = { onSelect(pane) })
-                    .padding(horizontal = CiSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
+        if (compact) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
             ) {
-                Text(
-                    text = pane.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                SettingsPane.entries.toList().chunked(3).forEach { panes ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+                    ) {
+                        panes.forEach { pane ->
+                            SettingsMenuItem(
+                                pane = pane,
+                                selected = selected,
+                                onSelect = onSelect,
+                                compact = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            SettingsPane.entries.forEach { pane ->
+                SettingsMenuItem(pane, selected, onSelect)
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsMenuItem(
+    pane: SettingsPane,
+    selected: SettingsPane,
+    onSelect: (SettingsPane) -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val active = pane == selected
+    Row(
+        modifier = modifier
+            .then(if (compact) Modifier else Modifier.fillMaxWidth())
+            .heightIn(min = CiSizes.fieldHeight)
+            .clip(CiShapes.field)
+            .background(
+                if (active) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+            )
+            .selectable(selected = active, role = Role.Tab, onClick = { onSelect(pane) })
+            .padding(horizontal = if (compact) CiSpacing.xs else CiSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = pane.label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -488,6 +573,7 @@ private fun LocalModelAndBackupCard(
     onBackup: () -> Unit,
     onOpenImport: () -> Unit,
     showBackup: Boolean = true,
+    compact: Boolean = false,
 ) {
     CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
         Row(
@@ -514,8 +600,51 @@ private fun LocalModelAndBackupCard(
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-            when (state.installState) {
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                    when (state.installState) {
+                        LocalModelInstallState.NOT_INSTALLED -> Button(onClick = onDownload, shape = CiShapes.pill) {
+                            Text("下载")
+                        }
+                        LocalModelInstallState.WAITING_NETWORK,
+                        LocalModelInstallState.QUEUED,
+                        LocalModelInstallState.DOWNLOADING -> {
+                            Button(onClick = onPause, shape = CiShapes.pill) { Text("暂停") }
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                        LocalModelInstallState.PAUSED -> {
+                            Button(onClick = onResume, shape = CiShapes.pill) { Text("继续") }
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                        LocalModelInstallState.FAILED -> {
+                            Button(onClick = onDownload, shape = CiShapes.pill) { Text("重试") }
+                            OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除") }
+                        }
+                        LocalModelInstallState.INSTALLED -> {
+                            OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除模型") }
+                        }
+                        LocalModelInstallState.VERIFYING -> {
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                    }
+                }
+                if (state.installState == LocalModelInstallState.WAITING_NETWORK ||
+                    state.installState == LocalModelInstallState.QUEUED ||
+                    state.installState == LocalModelInstallState.DOWNLOADING ||
+                    state.installState == LocalModelInstallState.VERIFYING ||
+                    state.installState == LocalModelInstallState.PAUSED
+                ) {
+                    Text(
+                        "${(state.downloadProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                when (state.installState) {
                 LocalModelInstallState.NOT_INSTALLED -> Button(onClick = onDownload, shape = CiShapes.pill) {
                     Text("下载")
                 }
@@ -553,6 +682,7 @@ private fun LocalModelAndBackupCard(
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
             }
+        }
         }
         if (state.installState == LocalModelInstallState.WAITING_NETWORK ||
             state.installState == LocalModelInstallState.QUEUED ||
@@ -592,8 +722,30 @@ private fun LocalModelAndBackupCard(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-            when (state.serviceState) {
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                when (state.serviceState) {
+                    LocalModelServiceState.OFF -> Button(
+                        onClick = onStart,
+                        enabled = state.installState == LocalModelInstallState.INSTALLED,
+                        shape = CiShapes.pill,
+                    ) { Text("启动") }
+                    LocalModelServiceState.STARTING -> OutlinedButton(onClick = onStop, shape = CiShapes.pill) {
+                        Text("取消启动")
+                    }
+                    LocalModelServiceState.ON -> {
+                        Button(onClick = onTest, shape = CiShapes.pill) { Text("文字测试") }
+                        Button(onClick = onTestVision, shape = CiShapes.pill) { Text("图片测试") }
+                        OutlinedButton(onClick = onStop, shape = CiShapes.pill) { Text("关闭") }
+                    }
+                    LocalModelServiceState.INFERENCING -> {
+                        Button(onClick = onCancelInference, shape = CiShapes.pill) { Text("确认取消并关闭") }
+                    }
+                }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                when (state.serviceState) {
                 LocalModelServiceState.OFF -> Button(
                     onClick = onStart,
                     enabled = state.installState == LocalModelInstallState.INSTALLED,
@@ -612,6 +764,7 @@ private fun LocalModelAndBackupCard(
                 }
             }
         }
+        }
 
         if (showBackup) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -619,6 +772,7 @@ private fun LocalModelAndBackupCard(
                 state = backupState,
                 onBackup = onBackup,
                 onOpenImport = onOpenImport,
+                compact = compact,
             )
         }
     }
@@ -639,6 +793,7 @@ private fun VoiceModelDownloadCard(
     onDelete: () -> Unit,
     title: String = "语音识别模型",
     detail: String = "SenseVoice-Small · sherpa-onnx 离线 · 约 166 MB",
+    compact: Boolean = false,
 ) {
     CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
         Row(
@@ -665,8 +820,52 @@ private fun VoiceModelDownloadCard(
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-            when (state.status) {
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                    when (state.status) {
+                        LocalModelDownloadStatus.IDLE,
+                        LocalModelDownloadStatus.CANCELED -> Button(onClick = onDownload, shape = CiShapes.pill) {
+                            Text("下载")
+                        }
+                        LocalModelDownloadStatus.WAITING_NETWORK,
+                        LocalModelDownloadStatus.QUEUED,
+                        LocalModelDownloadStatus.DOWNLOADING -> {
+                            Button(onClick = onPause, shape = CiShapes.pill) { Text("暂停") }
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                        LocalModelDownloadStatus.PAUSED -> {
+                            Button(onClick = onResume, shape = CiShapes.pill) { Text("继续") }
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                        LocalModelDownloadStatus.FAILED -> {
+                            Button(onClick = onDownload, shape = CiShapes.pill) { Text("重试") }
+                            OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除") }
+                        }
+                        LocalModelDownloadStatus.COMPLETED -> {
+                            OutlinedButton(onClick = onDelete, shape = CiShapes.pill) { Text("删除模型") }
+                        }
+                        LocalModelDownloadStatus.VERIFYING -> {
+                            OutlinedButton(onClick = onCancelDownload, shape = CiShapes.pill) { Text("取消") }
+                        }
+                    }
+                }
+                if (state.status == LocalModelDownloadStatus.WAITING_NETWORK ||
+                    state.status == LocalModelDownloadStatus.QUEUED ||
+                    state.status == LocalModelDownloadStatus.DOWNLOADING ||
+                    state.status == LocalModelDownloadStatus.VERIFYING ||
+                    state.status == LocalModelDownloadStatus.PAUSED
+                ) {
+                    Text(
+                        "${(state.fraction * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                when (state.status) {
                 LocalModelDownloadStatus.IDLE,
                 LocalModelDownloadStatus.CANCELED -> Button(onClick = onDownload, shape = CiShapes.pill) {
                     Text("下载")
@@ -705,6 +904,7 @@ private fun VoiceModelDownloadCard(
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
             }
+        }
         }
         if (state.status == LocalModelDownloadStatus.WAITING_NETWORK ||
             state.status == LocalModelDownloadStatus.QUEUED ||
@@ -766,43 +966,42 @@ private fun DataBackupSection(
     state: DataBackupUiState,
     onBackup: () -> Unit,
     onOpenImport: () -> Unit,
+    compact: Boolean = false,
 ) {
     val busy = state.backingUp || state.importingId != null || state.deletingId != null
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-            ) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_backup,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.actionIcon),
-                )
-                Text("数据备份", style = MaterialTheme.typography.titleSmall)
-                if (state.entries.isNotEmpty()) {
-                    CiChip(
-                        text = "${state.entries.size} 份",
-                        container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        content = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Text(
-                text = state.message ?: state.errorMessage
-                    ?: "仅备份学习数据和普通设置，不包含模型与 API Key。",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (state.errorMessage == null) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
+    val heading: @Composable () -> Unit = {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_backup,
+                contentDescription = null,
+                modifier = Modifier.size(CiSizes.actionIcon),
             )
+            Text("数据备份", style = MaterialTheme.typography.titleSmall)
+            if (state.entries.isNotEmpty()) {
+                CiChip(
+                    text = "${state.entries.size} 份",
+                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    content = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+    }
+    val detail: @Composable () -> Unit = {
+        Text(
+            text = state.message ?: state.errorMessage
+                ?: "仅备份学习数据和普通设置，不包含模型与 API Key。",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.errorMessage == null) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.error
+            },
+        )
+    }
+    val actions: @Composable () -> Unit = {
         Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
             OutlinedButton(onClick = onOpenImport, enabled = !busy, shape = CiShapes.pill) {
                 Text("管理备份")
@@ -810,6 +1009,28 @@ private fun DataBackupSection(
             Button(onClick = onBackup, enabled = !busy, shape = CiShapes.pill) {
                 Text(if (state.backingUp) "备份中…" else "一键备份")
             }
+        }
+    }
+    if (compact) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            heading()
+            detail()
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { actions() }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                heading()
+                detail()
+            }
+            actions()
         }
     }
 }
@@ -863,6 +1084,7 @@ private fun BackupListDialog(
 
 /** 外观账页：主题与动效各自可跟随系统，也允许用户明确覆盖。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun AppearanceCard(
     currentTheme: ThemeMode,
     currentMotion: MotionMode,
@@ -882,7 +1104,10 @@ private fun AppearanceCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
             ThemeMode.entries.forEach { mode ->
                 val selected = mode == currentTheme
                 CiChip(
@@ -920,7 +1145,10 @@ private fun AppearanceCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
             MotionMode.entries.forEach { mode ->
                 val selected = mode == currentMotion
                 CiChip(
@@ -1054,6 +1282,7 @@ private fun RouteTableCard(
     routes: Map<LlmTaskType, String?>,
     localInstalled: Boolean,
     onSelect: (LlmTaskType, String?) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     CiPanelCard(modifier = modifier, contentPadding = 0.dp, verticalSpacing = 0.dp) {
@@ -1077,6 +1306,7 @@ private fun RouteTableCard(
                     current = routes[task],
                     localInstalled = localInstalled,
                     onSelect = { onSelect(task, it) },
+                    compact = compact,
                 )
             }
         }
@@ -1089,6 +1319,7 @@ private fun RouteRow(
     current: String?,
     localInstalled: Boolean,
     onSelect: (String?) -> Unit,
+    compact: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val defaultLabel = "默认（${LlmEndpoints.defaultFor(task.tier).label}）"
@@ -1099,22 +1330,7 @@ private fun RouteRow(
         else -> LlmEndpoints.byId(current)?.label ?: current
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(CiSizes.ledgerRowHeight)
-            .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column {
-            Text(task.label, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = task.tier.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    val dropdown: @Composable () -> Unit = {
         Box {
             CiDropdownField(
                 value = currentLabel,
@@ -1141,6 +1357,37 @@ private fun RouteRow(
                     onClick = { onSelect(LlmSettings.ROUTE_OFF); expanded = false },
                 )
             }
+        }
+    }
+    val taskLabel: @Composable () -> Unit = {
+        Column {
+            Text(task.label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = task.tier.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (compact) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = CiSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            taskLabel()
+            dropdown()
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(CiSizes.ledgerRowHeight)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            taskLabel()
+            dropdown()
         }
     }
 }

@@ -18,6 +18,8 @@ package com.wsy.ci.feature.stats
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -126,6 +129,7 @@ fun TaskRecordsPanel(
     onSideFilter: (QuestFilter) -> Unit = {},
     onRemoveFilter: (RecordFilterKind) -> Unit = {},
     onRecordClick: (TaskRecord) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val filtered = filterRecords(records, statusFilter, domainFilter, mainFilter, sideFilter, activeFilters)
@@ -138,18 +142,34 @@ fun TaskRecordsPanel(
             if (totalCi > 0) " · 入账 $totalCi CI" else "",
         modifier = modifier,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-        ) {
-            CiSegmentedControl(
-                options = RecordFilter.entries,
-                selected = statusFilter,
-                label = { it.label },
-                onSelect = onStatusFilter,
-            )
-            FilterIconButton(onClick = { showFilterDialog = true })
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    CiSegmentedControl(
+                        options = RecordFilter.entries,
+                        selected = statusFilter,
+                        label = { it.label },
+                        onSelect = onStatusFilter,
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    FilterIconButton(onClick = { showFilterDialog = true })
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            ) {
+                CiSegmentedControl(
+                    options = RecordFilter.entries,
+                    selected = statusFilter,
+                    label = { it.label },
+                    onSelect = onStatusFilter,
+                )
+                FilterIconButton(onClick = { showFilterDialog = true })
+            }
         }
         ActiveFilterChips(
             records = records,
@@ -168,10 +188,14 @@ fun TaskRecordsPanel(
                 modifier = Modifier.padding(vertical = CiSpacing.sm),
             )
         } else {
-            RecordHeaderRow()
+            if (!compact) RecordHeaderRow()
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
                 filtered.forEach { record ->
-                    RecordRow(record, onClick = { onRecordClick(record) })
+                    RecordRow(
+                        record = record,
+                        compact = compact,
+                        onClick = { onRecordClick(record) },
+                    )
                 }
             }
         }
@@ -400,76 +424,75 @@ private fun HeaderCell(text: String, modifier: Modifier, align: TextAlign = Text
  * 整行可点，点开这条任务的任务卡（含实际学了多久）。
  */
 @Composable
-private fun RecordRow(record: TaskRecord, onClick: () -> Unit) {
+private fun RecordRow(record: TaskRecord, compact: Boolean, onClick: () -> Unit) {
     val task = record.task
     val accent = CiTheme.colors.taskBlock(task.status).accent
     Column(
         modifier = Modifier.clickable(onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(STATUS_DOT_SIZE)
-                    .clip(CiShapes.pill)
-                    .background(accent)
-            )
-            Text(
-                text = "${TimeFormat.shortDate(task.epochDay)}  " +
-                    "${TimeFormat.minuteOfDay(task.startMinute)}–" +
-                    TimeFormat.minuteOfDay(task.endMinute),
-                style = MaterialTheme.typography.bodySmall.tabularNums(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(TIME_COLUMN_WIDTH),
-            )
+        if (compact) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(STATUS_DOT_SIZE)
+                        .clip(CiShapes.pill)
+                        .background(accent),
+                )
                 Text(
-                    text = task.title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "${TimeFormat.shortDate(task.epochDay)}  " +
+                        "${TimeFormat.minuteOfDay(task.startMinute)}–" +
+                        TimeFormat.minuteOfDay(task.endMinute),
+                    style = MaterialTheme.typography.bodySmall.tabularNums(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
                 CiDifficultyChip(task.difficulty, showFactor = false)
             }
             Text(
-                text = record.domainName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(DOMAIN_COLUMN_WIDTH),
+                text = task.title,
+                style = MaterialTheme.typography.bodyMedium,
             )
-            Text(
-                text = if (record.actualMinutes > 0) {
-                    TimeFormat.duration(record.actualMinutes)
-                } else {
-                    "—"
-                },
-                style = MaterialTheme.typography.bodySmall.tabularNums(),
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.End,
-                modifier = Modifier.width(NUMBER_COLUMN_WIDTH),
-            )
-            Text(
-                text = if (record.rewardCi > 0) "+${record.rewardCi}" else "—",
-                style = MaterialTheme.typography.bodySmall.tabularNums(),
-                color = if (record.rewardCi > 0) {
-                    CiTheme.colors.income
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                textAlign = TextAlign.End,
-                modifier = Modifier.width(NUMBER_COLUMN_WIDTH),
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+            ) {
+                Text(
+                    text = record.domainName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "实际 " + if (record.actualMinutes > 0) {
+                            TimeFormat.duration(record.actualMinutes)
+                        } else {
+                            "—"
+                        },
+                        style = MaterialTheme.typography.bodySmall.tabularNums(),
+                    )
+                    Text(
+                        text = "CI " + if (record.rewardCi > 0) "+${record.rewardCi}" else "—",
+                        style = MaterialTheme.typography.bodySmall.tabularNums(),
+                        color = if (record.rewardCi > 0) {
+                            CiTheme.colors.income
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        } else {
+            ExpandedRecordRow(record = record, accent = accent)
         }
         if (task.note.isNotBlank()) {
             Text(
@@ -484,6 +507,70 @@ private fun RecordRow(record: TaskRecord, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .height(1.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+    }
+}
+
+@Composable
+private fun ExpandedRecordRow(record: TaskRecord, accent: Color) {
+    val task = record.task
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(STATUS_DOT_SIZE)
+                .clip(CiShapes.pill)
+                .background(accent),
+        )
+        Text(
+            text = "${TimeFormat.shortDate(task.epochDay)}  " +
+                "${TimeFormat.minuteOfDay(task.startMinute)}–" +
+                TimeFormat.minuteOfDay(task.endMinute),
+            style = MaterialTheme.typography.bodySmall.tabularNums(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(TIME_COLUMN_WIDTH),
+        )
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            CiDifficultyChip(task.difficulty, showFactor = false)
+        }
+        Text(
+            text = record.domainName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(DOMAIN_COLUMN_WIDTH),
+        )
+        Text(
+            text = if (record.actualMinutes > 0) TimeFormat.duration(record.actualMinutes) else "—",
+            style = MaterialTheme.typography.bodySmall.tabularNums(),
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(NUMBER_COLUMN_WIDTH),
+        )
+        Text(
+            text = if (record.rewardCi > 0) "+${record.rewardCi}" else "—",
+            style = MaterialTheme.typography.bodySmall.tabularNums(),
+            color = if (record.rewardCi > 0) {
+                CiTheme.colors.income
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(NUMBER_COLUMN_WIDTH),
         )
     }
 }

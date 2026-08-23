@@ -64,6 +64,8 @@ import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiStatPanel
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.HeatScale
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.designsystem.formatSignedAmount
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.util.TimeFormat
@@ -83,6 +85,7 @@ private const val CHECKIN_COLUMNS = 10
 
 @Composable
 fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     val period by viewModel.period.collectAsStateWithLifecycle()
     val recordFilter by viewModel.recordFilter.collectAsStateWithLifecycle()
     val domainFilter by viewModel.domainFilter.collectAsStateWithLifecycle()
@@ -106,48 +109,89 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
         containerColor = MaterialTheme.colorScheme.surface,
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
         ) {
-            CiScreenHeader(
-                title = "复盘",
-                subtitle = "记录事实，再决定下一轮怎么走",
-                trailing = {
+            if (isCompact) {
+                CiScreenHeader(title = "复盘")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    CiSegmentedControl(
+                        options = StatsPeriod.entries,
+                        selected = period,
+                        label = { it.label },
+                        onSelect = viewModel::setPeriod,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                     ) {
-                        CiSegmentedControl(
-                            options = StatsPeriod.entries,
-                            selected = period,
-                            label = { it.label },
-                            onSelect = viewModel::setPeriod,
-                        )
                         Button(
                             onClick = viewModel::analyze,
                             enabled = !analyzing,
                             shape = CiShapes.pill,
                         ) {
-                            if (!analyzing) {
-                                CiFunctionIcon(
-                                    resourceId = R.drawable.ic_ci_ai_schedule,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(CiSizes.compactIcon),
-                                )
-                            }
+                            CiFunctionIcon(
+                                resourceId = R.drawable.ic_ci_ai_schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(CiSizes.compactIcon),
+                            )
                             Text(
-                                if (analyzing) "分析中…" else "AI 深度分析",
-                                modifier = if (analyzing) {
-                                    Modifier
-                                } else {
-                                    Modifier.padding(start = CiSpacing.xs)
-                                },
+                                if (analyzing) "分析中…" else "分析",
+                                modifier = Modifier.padding(start = CiSpacing.xs),
                             )
                         }
-                        TextButton(onClick = viewModel::exportCsv) { Text("导出 CSV") }
+                        TextButton(onClick = viewModel::exportCsv) { Text("导出") }
                     }
-                },
-            )
+                }
+            } else {
+                CiScreenHeader(
+                    title = "复盘",
+                    subtitle = "记录事实，再决定下一轮怎么走",
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            CiSegmentedControl(
+                                options = StatsPeriod.entries,
+                                selected = period,
+                                label = { it.label },
+                                onSelect = viewModel::setPeriod,
+                            )
+                            Button(
+                                onClick = viewModel::analyze,
+                                enabled = !analyzing,
+                                shape = CiShapes.pill,
+                            ) {
+                                if (!analyzing) {
+                                    CiFunctionIcon(
+                                        resourceId = R.drawable.ic_ci_ai_schedule,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(CiSizes.compactIcon),
+                                    )
+                                }
+                                Text(
+                                    if (analyzing) "分析中…" else "AI 深度分析",
+                                    modifier = if (analyzing) {
+                                        Modifier
+                                    } else {
+                                        Modifier.padding(start = CiSpacing.xs)
+                                    },
+                                )
+                            }
+                            TextButton(onClick = viewModel::exportCsv) { Text("导出 CSV") }
+                        }
+                    },
+                )
+            }
 
             val d = data
             if (d == null || (d.totalMinutes == 0 && d.plannedCount == 0)) {
@@ -163,13 +207,20 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
-                        DomainBarsPanel(d, Modifier.weight(1f).height(BAR_PANEL_HEIGHT))
-                        PlanVsActualPanel(d, Modifier.weight(1f).height(BAR_PANEL_HEIGHT))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
-                        HeatmapPanel(d, Modifier.weight(1f).height(HEAT_PANEL_HEIGHT))
-                        CheckinPanel(d, Modifier.weight(1f).height(HEAT_PANEL_HEIGHT))
+                    if (isCompact) {
+                        DomainBarsPanel(d, Modifier.fillMaxWidth().height(BAR_PANEL_HEIGHT))
+                        PlanVsActualPanel(d, Modifier.fillMaxWidth().height(BAR_PANEL_HEIGHT))
+                        HeatmapPanel(d, Modifier.fillMaxWidth().height(HEAT_PANEL_HEIGHT))
+                        CheckinPanel(d, Modifier.fillMaxWidth().height(HEAT_PANEL_HEIGHT))
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
+                            DomainBarsPanel(d, Modifier.weight(1f).height(BAR_PANEL_HEIGHT))
+                            PlanVsActualPanel(d, Modifier.weight(1f).height(BAR_PANEL_HEIGHT))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.md)) {
+                            HeatmapPanel(d, Modifier.weight(1f).height(HEAT_PANEL_HEIGHT))
+                            CheckinPanel(d, Modifier.weight(1f).height(HEAT_PANEL_HEIGHT))
+                        }
                     }
                     EconomyPanel(d, Modifier.fillMaxWidth().height(ECONOMY_PANEL_HEIGHT))
                     TaskRecordsPanel(
@@ -185,6 +236,7 @@ fun StatsScreen(viewModel: StatsViewModel = viewModel()) {
                         onSideFilter = viewModel::applySideFilter,
                         onRemoveFilter = viewModel::removeRecordFilter,
                         onRecordClick = { detailRecord = it },
+                        compact = isCompact,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

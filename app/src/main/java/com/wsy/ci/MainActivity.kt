@@ -33,14 +33,19 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
@@ -49,11 +54,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -80,6 +87,9 @@ import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.CiCompactWindowBreakpoint
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.feature.calendar.CalendarScreen
 import com.wsy.ci.feature.quest.QuestScreen
 import com.wsy.ci.feature.settings.SettingsScreen
@@ -225,57 +235,89 @@ private fun CiRoot(
     LaunchedEffect(voiceViewModel) {
         voiceViewModel.navigationEvents.collect { destination = it }
     }
-    Row(modifier = Modifier.fillMaxSize()) {
-        CiNavigationRail(
-            selected = destination,
-            localModelState = localModelState,
-            wakeStateFlow = app.container.voiceWakeRuntime.state,
-            onSelect = { destination = it },
-            onAiClick = {
-                when (localModelState.serviceState) {
-                    LocalModelServiceState.OFF -> {
-                        if (localModelState.installState == LocalModelInstallState.INSTALLED) {
-                            localModelController.startService()
-                        } else {
-                            destination = Destination.SETTINGS
-                        }
-                    }
-                    LocalModelServiceState.STARTING -> localModelController.stopService()
-                    LocalModelServiceState.ON -> localModelController.stopService()
-                    LocalModelServiceState.INFERENCING -> confirmCancelInference = true
+    val onAiClick = {
+        when (localModelState.serviceState) {
+            LocalModelServiceState.OFF -> {
+                if (localModelState.installState == LocalModelInstallState.INSTALLED) {
+                    localModelController.startService()
+                } else {
+                    destination = Destination.SETTINGS
                 }
-            },
-            onVoiceStart = voiceViewModel::onVoiceStart,
-            onVoiceDragCancelChanged = voiceViewModel::onVoiceDragCancelChanged,
-            onVoiceEnd = voiceViewModel::onVoiceEnd,
-            onVoiceCancel = voiceViewModel::onVoiceCancel,
-            onRequestRecordAudioPermission = onRequestRecordAudioPermission,
-        )
-        Box(modifier = Modifier.weight(1f)) {
-            stateHolder.SaveableStateProvider(destination) {
-                when (destination) {
-                    Destination.TODAY -> TodayScreen()
-                    Destination.CALENDAR -> CalendarScreen()
-                    // 从任务线里开始专注后直接切到今日屏，那里才有计时卡
-                    Destination.QUEST -> QuestScreen(
-                        onNavigateToToday = { destination = Destination.TODAY },
-                    )
-                    Destination.SHOP -> ShopScreen()
-                    Destination.STATS -> StatsScreen()
-                    Destination.SETTINGS -> SettingsScreen(
+            }
+            LocalModelServiceState.STARTING -> localModelController.stopService()
+            LocalModelServiceState.ON -> localModelController.stopService()
+            LocalModelServiceState.INFERENCING -> confirmCancelInference = true
+        }
+    }
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            // 根统一消费安全区域；子页面的 Scaffold 只会收到已经消费后的 Insets。
+            .windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
+        val windowSize = if (
+            maxWidth < CiCompactWindowBreakpoint || maxHeight < CiCompactWindowBreakpoint
+        ) {
+            CiWindowSize.COMPACT
+        } else {
+            CiWindowSize.EXPANDED
+        }
+        CompositionLocalProvider(LocalCiWindowSize provides windowSize) {
+            if (windowSize == CiWindowSize.COMPACT) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    CiScreenHost(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = CiSizes.bottomNavigationHeight),
+                        destination = destination,
+                        stateHolder = stateHolder,
                         localModelController = localModelController,
-                        backupController = dataBackupController,
+                        dataBackupController = dataBackupController,
                         asrDownloads = asrDownloads,
                         kwsDownloads = kwsDownloads,
-                        onStartWakeListening = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                onRequestRecordAudioPermission()
-                            }
-                        },
-                        onStopWakeListening = {},
-                        onClearCorrectionRecords = app.container.voiceCorrectionStore::clear,
+                        app = app,
+                        onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+                        onNavigateToToday = { destination = Destination.TODAY },
+                    )
+                    CiNavigationBar(
+                        selected = destination,
+                        localModelState = localModelState,
+                        wakeStateFlow = app.container.voiceWakeRuntime.state,
+                        onSelect = { destination = it },
+                        onAiClick = onAiClick,
+                        onVoiceStart = voiceViewModel::onVoiceStart,
+                        onVoiceDragCancelChanged = voiceViewModel::onVoiceDragCancelChanged,
+                        onVoiceEnd = voiceViewModel::onVoiceEnd,
+                        onVoiceCancel = voiceViewModel::onVoiceCancel,
+                        onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    CiNavigationRail(
+                        selected = destination,
+                        localModelState = localModelState,
+                        wakeStateFlow = app.container.voiceWakeRuntime.state,
+                        onSelect = { destination = it },
+                        onAiClick = onAiClick,
+                        onVoiceStart = voiceViewModel::onVoiceStart,
+                        onVoiceDragCancelChanged = voiceViewModel::onVoiceDragCancelChanged,
+                        onVoiceEnd = voiceViewModel::onVoiceEnd,
+                        onVoiceCancel = voiceViewModel::onVoiceCancel,
+                        onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+                    )
+                    CiScreenHost(
+                        modifier = Modifier.weight(1f),
+                        destination = destination,
+                        stateHolder = stateHolder,
+                        localModelController = localModelController,
+                        dataBackupController = dataBackupController,
+                        asrDownloads = asrDownloads,
+                        kwsDownloads = kwsDownloads,
+                        app = app,
+                        onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+                        onNavigateToToday = { destination = Destination.TODAY },
                     )
                 }
             }
@@ -300,6 +342,52 @@ private fun CiRoot(
         )
     }
     VoiceOverlayHost(state = voiceState, viewModel = voiceViewModel)
+}
+
+/** 当前业务页面宿主：桌面与手机共用，确保切换窗口尺寸时保存各页面状态。 */
+@Composable
+private fun CiScreenHost(
+    modifier: Modifier,
+    destination: Destination,
+    stateHolder: SaveableStateHolder,
+    localModelController: LocalModelController,
+    dataBackupController: DataBackupController,
+    asrDownloads: LocalModelDownloadManager,
+    kwsDownloads: LocalModelDownloadManager,
+    app: CiApp,
+    onRequestRecordAudioPermission: () -> Unit,
+    onNavigateToToday: () -> Unit,
+) {
+    val context = LocalContext.current
+    Box(modifier = modifier) {
+        stateHolder.SaveableStateProvider(destination) {
+            when (destination) {
+                Destination.TODAY -> TodayScreen()
+                Destination.CALENDAR -> CalendarScreen()
+                // 从任务线里开始专注后直接切到今日屏，那里才有计时卡
+                Destination.QUEST -> QuestScreen(
+                    onNavigateToToday = onNavigateToToday,
+                )
+                Destination.SHOP -> ShopScreen()
+                Destination.STATS -> StatsScreen()
+                Destination.SETTINGS -> SettingsScreen(
+                    localModelController = localModelController,
+                    backupController = dataBackupController,
+                    asrDownloads = asrDownloads,
+                    kwsDownloads = kwsDownloads,
+                    onStartWakeListening = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            onRequestRecordAudioPermission()
+                        }
+                    },
+                    onStopWakeListening = {},
+                    onClearCorrectionRecords = app.container.voiceCorrectionStore::clear,
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -375,11 +463,119 @@ internal fun CiNavigationRail(
     }
 }
 
+/** 手机底部一级导航：六个业务入口与 AI 伙伴等宽分布，避免覆盖业务内容。 */
+@Composable
+private fun CiNavigationBar(
+    selected: Destination,
+    localModelState: com.wsy.ci.feature.settings.LocalModelUiState,
+    wakeStateFlow: StateFlow<VoiceWakeState>,
+    onSelect: (Destination) -> Unit,
+    onAiClick: () -> Unit,
+    onVoiceStart: () -> Unit,
+    onVoiceDragCancelChanged: (Boolean) -> Unit,
+    onVoiceEnd: () -> Unit,
+    onVoiceCancel: () -> Unit,
+    onRequestRecordAudioPermission: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val edgeColor = MaterialTheme.colorScheme.outlineVariant
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(CiSizes.bottomNavigationHeight)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .drawBehind {
+                drawLine(
+                    color = edgeColor,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = CiSizes.border.toPx(),
+                )
+            },
+    ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Destination.entries.take(3).forEach { destination ->
+                NavBarItem(
+                    destination = destination,
+                    isSelected = destination == selected,
+                    onClick = { onSelect(destination) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            AiQuickEntry(
+                modifier = Modifier.weight(1f),
+                state = localModelState,
+                wakeStateFlow = wakeStateFlow,
+                onClick = onAiClick,
+                onVoiceStart = onVoiceStart,
+                onVoiceDragCancelChanged = onVoiceDragCancelChanged,
+                onVoiceEnd = onVoiceEnd,
+                onVoiceCancel = onVoiceCancel,
+                onRequestRecordAudioPermission = onRequestRecordAudioPermission,
+                compactNavigation = true,
+            )
+            Destination.entries.drop(3).forEach { destination ->
+                NavBarItem(
+                    destination = destination,
+                    isSelected = destination == selected,
+                    onClick = { onSelect(destination) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavBarItem(
+    destination: Destination,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val container = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
+    }
+    val content = if (isSelected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = destination.label
+            }
+            .padding(horizontal = CiSpacing.xxs, vertical = CiSpacing.xxs)
+            .clip(CiShapes.field)
+            .background(container),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CiFunctionIcon(
+            resourceId = destination.icon,
+            contentDescription = null,
+            modifier = Modifier.size(CiSizes.navRailIcon),
+        )
+        Text(
+            text = destination.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+            modifier = Modifier.padding(top = CiSpacing.xxs),
+        )
+    }
+}
+
 /** 长按上滑超过这个距离视为取消录音。 */
 private val VOICE_CANCEL_THRESHOLD = 64.dp
 
 @Composable
 private fun AiQuickEntry(
+    modifier: Modifier = Modifier,
     state: com.wsy.ci.feature.settings.LocalModelUiState,
     wakeStateFlow: StateFlow<VoiceWakeState>,
     onClick: () -> Unit,
@@ -388,6 +584,7 @@ private fun AiQuickEntry(
     onVoiceEnd: () -> Unit,
     onVoiceCancel: () -> Unit,
     onRequestRecordAudioPermission: () -> Unit,
+    compactNavigation: Boolean = false,
 ) {
     val wakeState by wakeStateFlow.collectAsStateWithLifecycle()
     val active = state.serviceState != LocalModelServiceState.OFF
@@ -403,14 +600,12 @@ private fun AiQuickEntry(
     val statusLabel = wakeState.avatarLabel(companionState.label())
     val context = LocalContext.current
     Column(
-        modifier = Modifier
-            .size(CiSizes.navRailItem)
-            .clip(CiShapes.field)
-            .background(
-                when {
-                    wakeFailed -> MaterialTheme.colorScheme.errorContainer
-                    active || wakeEngaged -> MaterialTheme.colorScheme.primaryContainer
-                    else -> MaterialTheme.colorScheme.background.copy(alpha = 0f)
+        modifier = modifier
+            .then(
+                if (compactNavigation) {
+                    Modifier.fillMaxHeight()
+                } else {
+                    Modifier.size(CiSizes.navRailItem)
                 },
             )
             .semantics(mergeDescendants = true) {
@@ -474,14 +669,31 @@ private fun AiQuickEntry(
                     }
                     if (cancelling) onVoiceCancel() else onVoiceEnd()
                 }
-            },
+            }
+            .then(
+                if (compactNavigation) {
+                    Modifier.padding(horizontal = CiSpacing.xxs, vertical = CiSpacing.xxs)
+                } else {
+                    Modifier
+                },
+            )
+            .clip(CiShapes.field)
+            .background(
+                when {
+                    wakeFailed -> MaterialTheme.colorScheme.errorContainer
+                    active || wakeEngaged -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.background.copy(alpha = 0f)
+                },
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         VoiceWakeAvatar(
             state = wakeState,
             avatarRes = companionState.avatarDrawable(),
-            modifier = Modifier.size(CiSizes.fab),
+            modifier = Modifier.size(
+                if (compactNavigation) CiSizes.navRailIcon else CiSizes.fab,
+            ),
         )
         Text(
             text = statusLabel,

@@ -78,6 +78,8 @@ import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiSegmentedControl
 import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.timeline.DaySegments
 import com.wsy.ci.core.timeline.MINUTES_PER_DAY
@@ -255,6 +257,9 @@ private val WEEK_BOTTOM_SLACK: Dp = WEEK_MIN_BLOCK_HEIGHT
 /** 月视图日历格高度。 */
 private val MONTH_CELL_HEIGHT: Dp = 104.dp
 
+/** 手机竖屏月历压缩格高，确保六周月份完整可见。 */
+private val COMPACT_MONTH_CELL_HEIGHT: Dp = CiSpacing.xxxl + CiSpacing.xs
+
 /** 月视图无专注日的整格淡出程度。 */
 private const val MONTH_EMPTY_ALPHA = 0.6f
 
@@ -277,45 +282,69 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
     var mode by remember { mutableStateOf(CalendarMode.DAY) }
     var editing by remember { mutableStateOf<TaskEntity?>(null) }
     var detailTask by remember { mutableStateOf<TaskEntity?>(null) }
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(CiSpacing.lg),
+        modifier = Modifier.fillMaxSize().padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.sm + 2.dp),
     ) {
-        CiScreenHeader(
-            title = "日程",
-            subtitle = TimeFormat.date(selectedDay),
-            trailing = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-                ) {
-                    StepButton(R.drawable.ic_ci_previous, "上一时段") {
-                        when (mode) {
-                            CalendarMode.DAY -> viewModel.shift(-1)
-                            CalendarMode.WEEK -> viewModel.shift(-7)
-                            CalendarMode.MONTH -> viewModel.shiftMonth(-1)
+        if (isCompact) {
+            CompactCalendarHeader(
+                selectedDay = selectedDay,
+                mode = mode,
+                onPrevious = {
+                    when (mode) {
+                        CalendarMode.DAY -> viewModel.shift(-1)
+                        CalendarMode.WEEK -> viewModel.shift(-7)
+                        CalendarMode.MONTH -> viewModel.shiftMonth(-1)
+                    }
+                },
+                onToday = viewModel::today,
+                onNext = {
+                    when (mode) {
+                        CalendarMode.DAY -> viewModel.shift(1)
+                        CalendarMode.WEEK -> viewModel.shift(7)
+                        CalendarMode.MONTH -> viewModel.shiftMonth(1)
+                    }
+                },
+                onModeSelect = { mode = it },
+            )
+        } else {
+            CiScreenHeader(
+                title = "日程",
+                subtitle = TimeFormat.date(selectedDay),
+                trailing = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        StepButton(R.drawable.ic_ci_previous, "上一时段") {
+                            when (mode) {
+                                CalendarMode.DAY -> viewModel.shift(-1)
+                                CalendarMode.WEEK -> viewModel.shift(-7)
+                                CalendarMode.MONTH -> viewModel.shiftMonth(-1)
+                            }
                         }
-                    }
-                    TextButton(onClick = viewModel::today) {
-                        Text("回到今天", style = MaterialTheme.typography.labelMedium)
-                    }
-                    StepButton(R.drawable.ic_ci_next, "下一时段") {
-                        when (mode) {
-                            CalendarMode.DAY -> viewModel.shift(1)
-                            CalendarMode.WEEK -> viewModel.shift(7)
-                            CalendarMode.MONTH -> viewModel.shiftMonth(1)
+                        TextButton(onClick = viewModel::today) {
+                            Text("回到今天", style = MaterialTheme.typography.labelMedium)
                         }
+                        StepButton(R.drawable.ic_ci_next, "下一时段") {
+                            when (mode) {
+                                CalendarMode.DAY -> viewModel.shift(1)
+                                CalendarMode.WEEK -> viewModel.shift(7)
+                                CalendarMode.MONTH -> viewModel.shiftMonth(1)
+                            }
+                        }
+                        CiSegmentedControl(
+                            options = CalendarMode.entries,
+                            selected = mode,
+                            label = { it.label },
+                            onSelect = { mode = it },
+                        )
                     }
-                    CiSegmentedControl(
-                        options = CalendarMode.entries,
-                        selected = mode,
-                        label = { it.label },
-                        onSelect = { mode = it },
-                    )
-                }
-            },
-        )
+                },
+            )
+        }
 
         Box(modifier = Modifier.weight(1f)) {
             when (mode) {
@@ -327,7 +356,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                             conflicts = timelineConflictCount(daySegments),
                             unplaced = unplacedTasks,
                         )
-                        BlockerSummary(dayBlockers)
+                        BlockerSummary(dayBlockers, compact = isCompact)
                         DayTimeline(
                             segments = daySegments,
                             actuals = sessionsToBlocks(
@@ -372,6 +401,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                         viewModel.selectedDay.value = day
                         mode = CalendarMode.DAY
                     },
+                    compact = isCompact,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -383,7 +413,7 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(CiSpacing.lg)
+                    .padding(if (isCompact) CiSpacing.md else CiSpacing.lg)
                     .size(CiSizes.fab),
             ) {
                 CiFunctionIcon(
@@ -417,6 +447,54 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
             onDelete = if (task.id != 0L) viewModel::deleteTask else null,
             onDismiss = { editing = null },
             onCreateDomain = viewModel::addDomain,
+        )
+    }
+}
+
+@Composable
+private fun CompactCalendarHeader(
+    selectedDay: Long,
+    mode: CalendarMode,
+    onPrevious: () -> Unit,
+    onToday: () -> Unit,
+    onNext: () -> Unit,
+    onModeSelect: (CalendarMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "日程", style = com.wsy.ci.core.designsystem.CiTextStyles.pageTitle)
+                Text(
+                    text = TimeFormat.date(selectedDay),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
+            ) {
+                StepButton(R.drawable.ic_ci_previous, "上一时段", onPrevious)
+                TextButton(
+                    onClick = onToday,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = CiSpacing.xs,
+                        vertical = CiSpacing.xxs,
+                    ),
+                ) {
+                    Text("今天", style = MaterialTheme.typography.labelMedium)
+                }
+                StepButton(R.drawable.ic_ci_next, "下一时段", onNext)
+            }
+        }
+        CiSegmentedControl(
+            options = CalendarMode.entries,
+            selected = mode,
+            label = { it.label },
+            onSelect = onModeSelect,
         )
     }
 }
@@ -469,6 +547,7 @@ private fun WeekGrid(
     onTaskClick: (TaskEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     // 每列按天切片，跨零点的块在两列各占一段
     val segmentsByDay = (0..6).associate { index ->
         val day = weekStartDay + index
@@ -506,7 +585,11 @@ private fun WeekGrid(
             for (index in 0..6) {
                 val day = weekStartDay + index
                 Text(
-                    text = "周${WEEKDAY_LABELS[index]} ${TimeFormat.shortDate(day)}",
+                    text = if (isCompact) {
+                        "${WEEKDAY_LABELS[index]} ${LocalDate.ofEpochDay(day).dayOfMonth}"
+                    } else {
+                        "周${WEEKDAY_LABELS[index]} ${TimeFormat.shortDate(day)}"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (day == today) {
                         MaterialTheme.colorScheme.primary
@@ -589,7 +672,7 @@ private fun WeekBlocker(blocker: BlockerEntity) {
 
 /** 日视图锁定原因摘要：不拦截任务点击，且在重叠时仍保持 blocker 文案可见。 */
 @Composable
-private fun BlockerSummary(blockers: List<BlockerEntity>) {
+private fun BlockerSummary(blockers: List<BlockerEntity>, compact: Boolean = false) {
     if (blockers.isEmpty()) return
     Column(
         modifier = Modifier
@@ -600,20 +683,26 @@ private fun BlockerSummary(blockers: List<BlockerEntity>) {
         verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs),
     ) {
         Text(
-            text = "锁定时段（任务不会安排在这里）",
+            text = if (compact) {
+                "${blockers.size} 个锁定时段已显示在时间线中"
+            } else {
+                "锁定时段（任务不会安排在这里）"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        blockers.forEach { blocker ->
-            Text(
-                text = "${TimeFormat.minuteOfDay(blocker.startMinute)}–" +
-                    "${TimeFormat.minuteOfDay(blocker.endMinute)} · " +
-                    blocker.title.ifBlank { "不可安排" },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        if (!compact) {
+            blockers.forEach { blocker ->
+                Text(
+                    text = "${TimeFormat.minuteOfDay(blocker.startMinute)}–" +
+                        "${TimeFormat.minuteOfDay(blocker.endMinute)} · " +
+                        blocker.title.ifBlank { "不可安排" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -682,6 +771,7 @@ private fun MonthHeatmap(
     selectedDay: Long,
     sessions: List<SessionEntity>,
     onDayClick: (Long) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val scale = CiTheme.colors.focusHeat
@@ -696,7 +786,10 @@ private fun MonthHeatmap(
     val maxMinutes = minutesByDay.values.maxOrNull()?.coerceAtLeast(1) ?: 1
     val today = LocalDate.now().toEpochDay()
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+    Column(
+        modifier = if (compact) modifier.verticalScroll(rememberScrollState()) else modifier,
+        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+    ) {
         Text(
             text = "${date.year} 年 ${date.monthValue} 月 · " +
                 "共专注 ${TimeFormat.duration(minutesByDay.values.sum())}",
@@ -731,6 +824,7 @@ private fun MonthHeatmap(
                             level = scale.levelOf(minutes, maxMinutes),
                             isToday = epochDay == today,
                             onClick = { onDayClick(epochDay) },
+                            compact = compact,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -748,12 +842,13 @@ private fun MonthCell(
     level: Int,
     isToday: Boolean,
     onClick: () -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val scale = CiTheme.colors.focusHeat
     Column(
         modifier = modifier
-            .height(MONTH_CELL_HEIGHT)
+            .height(if (compact) COMPACT_MONTH_CELL_HEIGHT else MONTH_CELL_HEIGHT)
             .alpha(if (level == 0) MONTH_EMPTY_ALPHA else 1f)
             .clip(CiShapes.monthCell)
             .background(scale.container(level))

@@ -41,12 +41,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.wsy.ci.R
 import com.wsy.ci.core.porting.ImportPreview
 
 /** 粘贴框的最小与常规高度：平板上一屏能看下十来行 JSON。 */
 private val PASTE_FIELD_MIN_HEIGHT = 200.dp
 private val PASTE_FIELD_HEIGHT = 280.dp
+
+/** 粘贴导入弹窗在手机上贴合可用宽度，在平板上沿用表单弹窗上限。 */
+@Composable
+private fun pasteDialogModifier(): Modifier = Modifier
+    .ciResponsiveDialogWidth(CiSizes.dialogFormWidth)
 
 /**
  * 通用「粘贴 JSON 导入」对话框：复制模板 → 喂给任意聊天 AI → 粘回来校验落库。
@@ -73,11 +79,18 @@ fun CiPasteImportDialog(
 ) {
     var text by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
+    val pasteFieldHeight = if (LocalCiWindowSize.current == CiWindowSize.COMPACT) {
+        PASTE_FIELD_MIN_HEIGHT
+    } else {
+        PASTE_FIELD_HEIGHT
+    }
 
     if (result != null) {
         val succeeded = result.startsWith("✅")
         val close = { onDismissResult(); if (succeeded) onDismiss() }
         AlertDialog(
+            modifier = pasteDialogModifier(),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             shape = CiShapes.dialog,
             onDismissRequest = close,
             title = {
@@ -104,6 +117,8 @@ fun CiPasteImportDialog(
     if (preview != null) {
         // 关掉预览退回粘贴框，而不是整个关闭：内容还在，用户可以改完再来一次
         AlertDialog(
+            modifier = pasteDialogModifier(),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             shape = CiShapes.dialog,
             onDismissRequest = onCancelPreview,
             title = { Text("确认导入内容") },
@@ -119,6 +134,8 @@ fun CiPasteImportDialog(
     }
 
     AlertDialog(
+        modifier = pasteDialogModifier(),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = CiShapes.dialog,
         onDismissRequest = onDismiss,
         title = { ImportDialogTitle(R.drawable.ic_ci_import, title) },
@@ -153,8 +170,7 @@ fun CiPasteImportDialog(
                     label = pasteLabel,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = PASTE_FIELD_MIN_HEIGHT)
-                        .height(PASTE_FIELD_HEIGHT)
+                        .height(pasteFieldHeight)
                         .verticalScroll(rememberScrollState()),
                     singleLine = false,
                 )

@@ -68,6 +68,7 @@ fun VoiceSettingsCard(
     onStartWakeListening: () -> Unit,
     onStopWakeListening: () -> Unit,
     onClearCorrectionRecords: () -> Unit,
+    compact: Boolean = false,
 ) {
     var phraseDraft by rememberSaveable(wakePhrase) { mutableStateOf(wakePhrase) }
     var phraseError by remember { mutableStateOf<String?>(null) }
@@ -79,7 +80,10 @@ fun VoiceSettingsCard(
         phraseError = null
     }
 
-    CiPanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = CiSpacing.lg) {
+    CiPanelCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = if (compact) CiSpacing.md else CiSpacing.lg,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
                 Text("语音助手", style = MaterialTheme.typography.titleMedium)
@@ -123,11 +127,7 @@ fun VoiceSettingsCard(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-            ) {
+            val wakePhraseField: @Composable (Modifier) -> Unit = { modifier ->
                 CiTextField(
                     value = phraseDraft,
                     onValueChange = {
@@ -135,14 +135,35 @@ fun VoiceSettingsCard(
                         phraseError = null
                     },
                     placeholder = AppSettings.DEFAULT_WAKE_PHRASE,
-                    modifier = Modifier.weight(1f),
+                    modifier = modifier,
                 )
+            }
+            val saveWakePhraseButton: @Composable () -> Unit = {
                 Button(
                     onClick = { phraseError = onSaveWakePhrase(phraseDraft) },
                     enabled = phraseDraft != wakePhrase,
                     shape = CiShapes.pill,
                 ) {
                     Text("保存唤醒词")
+                }
+            }
+            if (compact) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    wakePhraseField(Modifier.fillMaxWidth())
+                    saveWakePhraseButton()
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    wakePhraseField(Modifier.weight(1f))
+                    saveWakePhraseButton()
                 }
             }
             phraseError?.let {
@@ -174,7 +195,17 @@ fun VoiceSettingsCard(
                 CiSegmentedControl(
                     options = VoiceAutoExecuteLevel.entries.toList(),
                     selected = autoExecuteLevel,
-                    label = { it.label },
+                    label = {
+                        if (!compact) {
+                            it.label
+                        } else {
+                            when (it) {
+                                VoiceAutoExecuteLevel.OFF -> "确认"
+                                VoiceAutoExecuteLevel.SAFE -> "安全"
+                                VoiceAutoExecuteLevel.MODERATE -> "适度"
+                            }
+                        }
+                    },
                     onSelect = onAutoExecuteLevelChange,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -283,7 +314,7 @@ private fun VoiceCommandHelpDialog(onDismiss: () -> Unit) {
         title = { Text("语音指令帮助") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
-                VoiceHelpRow("录音手势", "长按左侧导航栏底部的 AI 按钮开始录音，上滑取消，松开后识别。")
+                VoiceHelpRow("录音手势", "长按本地 AI 按钮开始录音，上滑取消，松开后识别。")
                 VoiceHelpRow("查询", "“今天安排了什么？”、“我在学习什么领域？”")
                 VoiceHelpRow("计时", "“开始专注数学 25 分钟”、“停止计时”。")
                 VoiceHelpRow("任务", "“完成任务阅读论文”、“跳过任务背单词”。")

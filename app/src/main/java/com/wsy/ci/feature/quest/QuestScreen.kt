@@ -26,10 +26,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -68,16 +70,18 @@ import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiScreenHeader
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiUnderlineTabs
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.quest.QuestProgress
 import com.wsy.ci.core.title.Titles
 import com.wsy.ci.feature.today.TaskEditorDialog
 import java.time.LocalDate
 
-private enum class QuestTab(val label: String) {
-    MAIN_SIDE("主线 · 支线"),
-    FINISHED("已完成主线 · 支线"),
-    DOMAIN("领域头衔"),
+private enum class QuestTab(val label: String, val compactLabel: String) {
+    MAIN_SIDE("主线 · 支线", "进行中"),
+    FINISHED("已完成主线 · 支线", "历史"),
+    DOMAIN("领域头衔", "领域"),
 }
 
 /** 主线卡：每条独占一行。 */
@@ -96,6 +100,7 @@ fun QuestScreen(
     viewModel: QuestViewModel = viewModel(),
     onNavigateToToday: () -> Unit = {},
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     val quests by viewModel.quests.collectAsStateWithLifecycle()
     val domains by viewModel.domains.collectAsStateWithLifecycle()
     val allTasks by viewModel.allTasks.collectAsStateWithLifecycle()
@@ -158,41 +163,77 @@ fun QuestScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
-            CiScreenHeader(
-                title = "任务",
-                subtitle = "把成长拆成可执行的学习线",
-                trailing = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                        OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
-                            CiFunctionIcon(
-                                resourceId = R.drawable.ic_ci_ai_schedule,
-                                contentDescription = null,
-                                modifier = Modifier.size(CiSizes.compactIcon),
-                            )
-                            Text(
-                                "AI 生成学习路线",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(start = CiSpacing.xs),
-                            )
-                        }
-                        OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
-                            CiFunctionIcon(
-                                resourceId = R.drawable.ic_ci_import,
-                                contentDescription = null,
-                                modifier = Modifier.size(CiSizes.compactIcon),
-                            )
-                            Text(
-                                "导入 JSON 计划",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(start = CiSpacing.xs),
-                            )
-                        }
+            if (isCompact) {
+                CiScreenHeader(title = "任务")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    OutlinedButton(
+                        onClick = { showRouteGen = true },
+                        shape = CiShapes.pill,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_ai_schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text("AI 生成学习路线", modifier = Modifier.padding(start = CiSpacing.xs))
                     }
-                },
-            )
+                    OutlinedButton(
+                        onClick = { showImport = true },
+                        shape = CiShapes.pill,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        CiFunctionIcon(
+                            resourceId = R.drawable.ic_ci_import,
+                            contentDescription = null,
+                            modifier = Modifier.size(CiSizes.compactIcon),
+                        )
+                        Text("导入 JSON 计划", modifier = Modifier.padding(start = CiSpacing.xs))
+                    }
+                }
+            } else {
+                CiScreenHeader(
+                    title = "任务",
+                    subtitle = "把成长拆成可执行的学习线",
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                            OutlinedButton(onClick = { showRouteGen = true }, shape = CiShapes.pill) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_ai_schedule,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                                Text(
+                                    "AI 生成学习路线",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(start = CiSpacing.xs),
+                                )
+                            }
+                            OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_import,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                                Text(
+                                    "导入 JSON 计划",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(start = CiSpacing.xs),
+                                )
+                            }
+                        }
+                    },
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
@@ -200,9 +241,11 @@ fun QuestScreen(
                 CiUnderlineTabs(
                     options = QuestTab.entries,
                     selected = tab,
-                    label = { it.label },
+                    label = { if (isCompact) it.compactLabel else it.label },
                     onSelect = { tab = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 )
             }
 
@@ -217,6 +260,7 @@ fun QuestScreen(
                     onArchive = viewModel::archiveQuest,
                     onRestore = viewModel::restoreQuest,
                     onBatchAssign = viewModel::openBatchAssign,
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
                 QuestTab.FINISHED -> QuestBoard(
@@ -230,11 +274,13 @@ fun QuestScreen(
                     onArchive = viewModel::archiveQuest,
                     onRestore = viewModel::restoreQuest,
                     onBatchAssign = viewModel::openBatchAssign,
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
                 QuestTab.DOMAIN -> DomainTitleBoard(
                     domains = domains,
                     onOpenDomain = { openedDomain = it },
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -430,6 +476,7 @@ private fun QuestBoard(
     onArchive: (QuestEntity) -> Unit,
     onRestore: (QuestEntity) -> Unit,
     onBatchAssign: (QuestEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val mains = quests.filter { it.type == QuestType.MAIN }
@@ -472,6 +519,7 @@ private fun QuestBoard(
                             onArchive = onArchive,
                             onRestore = onRestore,
                             onBatchAssign = onBatchAssign,
+                            compact = compact,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -484,7 +532,7 @@ private fun QuestBoard(
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
-                    maxItemsInEachRow = SIDE_CARDS_PER_ROW,
+                    maxItemsInEachRow = if (compact) 1 else SIDE_CARDS_PER_ROW,
                 ) {
                     sides.forEach { quest ->
                         SideQuestCard(
@@ -553,21 +601,42 @@ private fun MainQuestCard(
     onArchive: (QuestEntity) -> Unit,
     onRestore: (QuestEntity) -> Unit,
     onBatchAssign: (QuestEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val today = LocalDate.now().toEpochDay()
     val daysLeft = quest.deadlineEpochDay?.minus(today)
 
     CiPanelCard(
-        modifier = modifier.height(MAIN_CARD_HEIGHT).clickable { onOpen(quest) },
+        modifier = modifier.heightIn(min = MAIN_CARD_HEIGHT).clickable { onOpen(quest) },
         contentPadding = 20.dp,
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
-                Column(modifier = Modifier.weight(1f)) {
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        Text(
+                            text = quest.title + statusSuffix(quest.status),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
+                    }
+                    if (quest.status == QuestStatus.ACTIVE) {
+                        TextButton(
+                            onClick = { onBatchAssign(quest) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("批量关联任务") }
+                    }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                    Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = quest.title + statusSuffix(quest.status),
                         style = MaterialTheme.typography.titleMedium,
@@ -585,20 +654,17 @@ private fun MainQuestCard(
                         )
                     }
                 }
-                if (quest.status == QuestStatus.ACTIVE) {
-                    TextButton(onClick = { onBatchAssign(quest) }) {
-                        Text("批量关联任务")
+                    if (quest.status == QuestStatus.ACTIVE) {
+                        TextButton(onClick = { onBatchAssign(quest) }) {
+                            Text("批量关联任务")
+                        }
                     }
+                    QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
                 }
-                QuestCardActions(quest, onEdit, onComplete, onArchive, onRestore)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+                if (compact) {
                     val deadlineText = when {
                         daysLeft == null -> "无截止日"
                         daysLeft >= 0 -> "剩 $daysLeft 天"
@@ -628,6 +694,42 @@ private fun MainQuestCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        val deadlineText = when {
+                            daysLeft == null -> "无截止日"
+                            daysLeft >= 0 -> "剩 $daysLeft 天"
+                            else -> "已超期 ${-daysLeft} 天"
+                        }
+                        CiChip(
+                            text = deadlineText,
+                            container = if (daysLeft != null && daysLeft < DEADLINE_WARN_DAYS) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            },
+                            content = if (daysLeft != null && daysLeft < DEADLINE_WARN_DAYS) {
+                                MaterialTheme.colorScheme.onErrorContainer
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            text = if (progress.total > 0) {
+                                "任务进度 ${progress.done + progress.skipped}/${progress.total} · " +
+                                    "已处理 ${(progress.ratio * 100).toInt()}%"
+                            } else {
+                                "暂无具体任务"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 CiProgressBar(
                     progress = progress.ratio,
@@ -721,6 +823,7 @@ private fun IconAction(
 private fun DomainTitleBoard(
     domains: List<DomainEntity>,
     onOpenDomain: (DomainEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -729,7 +832,7 @@ private fun DomainTitleBoard(
     ) {
         SectionLabel("点开任一领域，可以看到挣这条头衔线经验的主线与支线（含已完成的）")
         domains.forEach { domain ->
-            DomainCard(domain, onOpen = { onOpenDomain(domain) })
+            DomainCard(domain, compact = compact, onOpen = { onOpenDomain(domain) })
         }
     }
 }
@@ -737,7 +840,7 @@ private fun DomainTitleBoard(
 /** 领域头衔卡：Lv.x · 头衔名 + 经验条 + 6 级头衔 chip 行。整卡可点，看这块经验的来处。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DomainCard(domain: DomainEntity, onOpen: () -> Unit) {
+private fun DomainCard(domain: DomainEntity, compact: Boolean = false, onOpen: () -> Unit) {
     val level = Economy.levelForExp(domain.totalExp)
     val titles = Titles.titleLine(domain)
     val nextExp = Economy.expToNextLevel(domain.totalExp)
@@ -747,34 +850,64 @@ private fun DomainCard(domain: DomainEntity, onOpen: () -> Unit) {
         contentPadding = 20.dp,
         verticalSpacing = 10.dp,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
-            ) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_learning_domain,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.actionIcon),
-                )
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xxs)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_learning_domain,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.actionIcon),
+                    )
+                    Text(
+                        text = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
-                    text = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = if (nextExp != null) {
+                        "${domain.totalExp} XP · 距下一级还差 $nextExp"
+                    } else {
+                        "${domain.totalExp} XP · 已达最高头衔"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = if (nextExp != null) {
-                    "${domain.totalExp} XP · 距下一级还差 $nextExp"
-                } else {
-                    "${domain.totalExp} XP · 已达最高头衔"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
+                    CiFunctionIcon(
+                        resourceId = R.drawable.ic_ci_learning_domain,
+                        contentDescription = null,
+                        modifier = Modifier.size(CiSizes.actionIcon),
+                    )
+                    Text(
+                        text = "${domain.name} · Lv.$level ${Titles.currentTitle(domain)}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                Text(
+                    text = if (nextExp != null) {
+                        "${domain.totalExp} XP · 距下一级还差 $nextExp"
+                    } else {
+                        "${domain.totalExp} XP · 已达最高头衔"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         CiProgressBar(
             progress = Economy.levelProgress(domain.totalExp),

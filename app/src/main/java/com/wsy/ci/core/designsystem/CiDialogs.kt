@@ -19,11 +19,11 @@ package com.wsy.ci.core.designsystem
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * 表单/详情/确认类对话框外壳：定宽、圆角 28、surfaceContainerHigh、内边距 24，
@@ -44,6 +45,7 @@ import androidx.compose.ui.window.Dialog
  * [destructiveLabel] 排在取消与主按钮之间，用 error 色标出来（删除这类不可逆动作）。
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun CiFormDialog(
     title: String,
     onDismiss: () -> Unit,
@@ -56,9 +58,13 @@ fun CiFormDialog(
     width: Dp = CiSizes.dialogFormWidth,
     content: @Composable () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    val dialogModifier = Modifier.ciResponsiveDialogWidth(width)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Surface(
-            modifier = Modifier.width(width),
+            modifier = dialogModifier,
             shape = CiShapes.dialog,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = CiElevation.dialog,
@@ -69,9 +75,10 @@ fun CiFormDialog(
             ) {
                 Text(text = title, style = MaterialTheme.typography.titleLarge)
                 content()
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = CiSpacing.xxs + 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                 ) {
                     TextButton(onClick = onDismiss) { Text(dismissLabel) }
                     if (destructiveLabel != null && onDestructive != null) {

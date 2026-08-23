@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -86,6 +87,8 @@ import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTextField
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.CiUnderlineTabs
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.designsystem.formatCi
 import com.wsy.ci.core.designsystem.formatSignedAmount
 import com.wsy.ci.core.designsystem.tabularNums
@@ -130,6 +133,7 @@ private val LedgerType.label: String
 
 @Composable
 fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     val items by viewModel.items.collectAsStateWithLifecycle()
     val picks by viewModel.picks.collectAsStateWithLifecycle()
     val balance by viewModel.balance.collectAsStateWithLifecycle()
@@ -177,55 +181,105 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(CiSpacing.lg),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(if (isCompact) CiSpacing.md else CiSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
         ) {
-            CiScreenHeader(
-                title = "商城",
-                subtitle = "把长期投入兑换成真实休息与奖励",
-                trailing = { CiBalanceChip(balance) },
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+            if (isCompact) {
+                CiScreenHeader(
+                    title = "商城",
+                    trailing = { CiBalanceChip(balance) },
+                )
                 CiUnderlineTabs(
                     options = ShopTab.entries,
                     selected = tab,
                     label = { it.label },
                     onSelect = { tab = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 )
                 if (tab == ShopTab.SHELF) {
-                    Row(
-                        modifier = Modifier.padding(bottom = CiSpacing.xs),
-                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                     ) {
-                        OutlinedButton(onClick = { showAiInput = true }, shape = CiShapes.pill) {
+                        OutlinedButton(
+                            onClick = { showAiInput = true },
+                            shape = CiShapes.pill,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             CiFunctionIcon(
                                 resourceId = R.drawable.ic_ci_ai_schedule,
                                 contentDescription = null,
                                 modifier = Modifier.size(CiSizes.compactIcon),
                             )
-                            Text(
-                                "AI 估价上架",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(start = CiSpacing.xs),
-                            )
+                            Text("AI 估价上架", modifier = Modifier.padding(start = CiSpacing.xs))
                         }
-                        OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                        OutlinedButton(
+                            onClick = { showImport = true },
+                            shape = CiShapes.pill,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             CiFunctionIcon(
                                 resourceId = R.drawable.ic_ci_import,
                                 contentDescription = null,
                                 modifier = Modifier.size(CiSizes.compactIcon),
                             )
-                            Text(
-                                "粘贴批量上架",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(start = CiSpacing.xs),
-                            )
+                            Text("粘贴批量上架", modifier = Modifier.padding(start = CiSpacing.xs))
+                        }
+                    }
+                }
+            } else {
+                CiScreenHeader(
+                    title = "商城",
+                    subtitle = "把长期投入兑换成真实休息与奖励",
+                    trailing = { CiBalanceChip(balance) },
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    CiUnderlineTabs(
+                        options = ShopTab.entries,
+                        selected = tab,
+                        label = { it.label },
+                        onSelect = { tab = it },
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (tab == ShopTab.SHELF) {
+                        Row(
+                            modifier = Modifier.padding(bottom = CiSpacing.xs),
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            OutlinedButton(onClick = { showAiInput = true }, shape = CiShapes.pill) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_ai_schedule,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                                Text(
+                                    "AI 估价上架",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(start = CiSpacing.xs),
+                                )
+                            }
+                            OutlinedButton(onClick = { showImport = true }, shape = CiShapes.pill) {
+                                CiFunctionIcon(
+                                    resourceId = R.drawable.ic_ci_import,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(CiSizes.compactIcon),
+                                )
+                                Text(
+                                    "粘贴批量上架",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(start = CiSpacing.xs),
+                                )
+                            }
                         }
                     }
                 }
@@ -238,6 +292,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     },
                     balance = balance,
                     onBuy = { pick, item -> viewModel.purchase(item.id, pick.id) },
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
                 ShopTab.SHELF -> ShelfList(
@@ -245,6 +300,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     balance = balance,
                     onBuy = { viewModel.purchase(it.id) },
                     onEdit = { editing = it },
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
                 ShopTab.MINE -> PurchaseList(
@@ -255,6 +311,7 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                     onSetTime = viewModel::setTimeFilter,
                     onReset = viewModel::resetPurchaseFilter,
                     onToggleFulfilled = viewModel::toggleFulfilled,
+                    compact = isCompact,
                     modifier = Modifier.weight(1f),
                 )
                 ShopTab.LEDGER -> LedgerList(ledger, modifier = Modifier.weight(1f))
@@ -360,6 +417,7 @@ private fun DailyPicksWall(
     picks: List<Pair<DailyPickEntity, ShopItemEntity>>,
     balance: Long,
     onBuy: (DailyPickEntity, ShopItemEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (picks.isEmpty()) {
@@ -374,7 +432,7 @@ private fun DailyPicksWall(
         modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
         verticalArrangement = Arrangement.spacedBy(CiSpacing.md),
-        maxItemsInEachRow = PICK_CARDS_PER_ROW,
+        maxItemsInEachRow = if (compact) 1 else PICK_CARDS_PER_ROW,
     ) {
         picks.forEach { (pick, item) ->
             PickCard(pick, item, balance, onBuy, modifier = Modifier.weight(1f))
@@ -481,6 +539,7 @@ private fun ShelfList(
     balance: Long,
     onBuy: (ShopItemEntity) -> Unit,
     onEdit: (ShopItemEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (items.isEmpty()) {
@@ -497,60 +556,87 @@ private fun ShelfList(
     ) {
         items(items, key = { it.id }) { item ->
             val quality = CiTheme.colors.quality(item.rarity)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(CiSizes.shelfRowHeight)
-                    .padding(horizontal = CiSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-                    modifier = Modifier.weight(1f),
+            if (compact) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(CiSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
                 ) {
-                    Text(item.emoji, style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        text = item.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    CiQualityChip(rarity = item.rarity, label = item.rarity.label)
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
-                ) {
-                    Text(
-                        text = formatCi(item.priceCi),
-                        style = MaterialTheme.typography.labelLarge.tabularNums(),
-                        color = quality.accent,
-                    )
-                    Text(
-                        text = "编辑",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.clickable { onEdit(item) },
-                    )
-                    Button(
-                        onClick = { onBuy(item) },
-                        enabled = balance >= item.priceCi,
-                        shape = CiShapes.pill,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        contentPadding = PaddingValues(
-                            horizontal = CiSpacing.md,
-                            vertical = CiSpacing.xs,
-                        ),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+                    ) {
+                        Text(item.emoji, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        CiQualityChip(rarity = item.rarity, label = item.rarity.label)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End,
                     ) {
                         Text(
-                            if (balance >= item.priceCi) "兑换" else "余额不足",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = formatCi(item.priceCi),
+                            style = MaterialTheme.typography.labelLarge.tabularNums(),
+                            color = quality.accent,
+                            modifier = Modifier.padding(end = CiSpacing.sm),
                         )
+                        Text(
+                            text = "编辑",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .clickable { onEdit(item) }
+                                .padding(horizontal = CiSpacing.sm, vertical = CiSpacing.xs),
+                        )
+                        ShelfBuyButton(item, balance, onBuy)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(CiSizes.shelfRowHeight)
+                        .padding(horizontal = CiSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(item.emoji, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        CiQualityChip(rarity = item.rarity, label = item.rarity.label)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.md),
+                    ) {
+                        Text(
+                            text = formatCi(item.priceCi),
+                            style = MaterialTheme.typography.labelLarge.tabularNums(),
+                            color = quality.accent,
+                        )
+                        Text(
+                            text = "编辑",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable { onEdit(item) },
+                        )
+                        ShelfBuyButton(item, balance, onBuy)
                     }
                 }
             }
@@ -559,9 +645,38 @@ private fun ShelfList(
     }
 }
 
+@Composable
+private fun ShelfBuyButton(
+    item: ShopItemEntity,
+    balance: Long,
+    onBuy: (ShopItemEntity) -> Unit,
+) {
+    Button(
+        onClick = { onBuy(item) },
+        enabled = balance >= item.priceCi,
+        shape = CiShapes.pill,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        contentPadding = PaddingValues(
+            horizontal = CiSpacing.md,
+            vertical = CiSpacing.xs,
+        ),
+    ) {
+        Text(
+            if (balance >= item.priceCi) "兑换" else "余额不足",
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
 /** 流水：56dp 列表行，收入走 ciIncome、支出走 ciExpense。 */
 @Composable
-private fun LedgerList(entries: List<LedgerEntity>, modifier: Modifier = Modifier) {
+private fun LedgerList(
+    entries: List<LedgerEntity>,
+    modifier: Modifier = Modifier,
+) {
     if (entries.isEmpty()) {
         EmptyHint(text = "还没有流水，完成一次专注就有第一笔入账", modifier = modifier)
         return
@@ -575,7 +690,7 @@ private fun LedgerList(entries: List<LedgerEntity>, modifier: Modifier = Modifie
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(CiSizes.ledgerRowHeight)
+                    .heightIn(min = CiSizes.ledgerRowHeight)
                     .padding(horizontal = CiSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -623,6 +738,7 @@ private fun PurchaseList(
     onSetTime: (TimeFilter) -> Unit,
     onReset: () -> Unit,
     onToggleFulfilled: (PurchaseEntity) -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (purchases.isEmpty()) {
@@ -661,7 +777,11 @@ private fun PurchaseList(
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CiShapes.field)
         ) {
             items(shown, key = { it.id }) { purchase ->
-                PurchaseRow(purchase = purchase, onToggle = { onToggleFulfilled(purchase) })
+                PurchaseRow(
+                    purchase = purchase,
+                    compact = compact,
+                    onToggle = { onToggleFulfilled(purchase) },
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
@@ -762,25 +882,63 @@ private fun FilterChipItem(
 }
 
 @Composable
-private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(CiSizes.shelfRowHeight)
-            // 已实现的压一层阴影底色，整行看起来是「沉下去」的，和待兑现的一眼分开
-            .then(
-                if (purchase.fulfilled) {
-                    Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                } else {
-                    Modifier
+private fun PurchaseRow(
+    purchase: PurchaseEntity,
+    compact: Boolean = false,
+    onToggle: () -> Unit,
+) {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        // 已实现的压一层阴影底色，整行看起来是「沉下去」的，和待兑现的一眼分开
+        .then(
+            if (purchase.fulfilled) {
+                Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            } else {
+                Modifier
+            }
+        )
+    if (compact) {
+        Column(
+            modifier = rowModifier.padding(CiSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+            ) {
+                CiQualityChip(purchase.rarity, purchase.rarity.label)
+                Column(modifier = Modifier.weight(1f)) {
+                    PurchaseNameAndDate(purchase)
                 }
-            )
-            .padding(horizontal = CiSpacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
-    ) {
-        CiQualityChip(purchase.rarity, purchase.rarity.label)
-        Column(modifier = Modifier.weight(1f)) {
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PurchaseStateAction(purchase = purchase, onToggle = onToggle)
+            }
+        }
+    } else {
+        Row(
+            modifier = rowModifier
+                .height(CiSizes.shelfRowHeight)
+                .padding(horizontal = CiSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.sm),
+        ) {
+            CiQualityChip(purchase.rarity, purchase.rarity.label)
+            Column(modifier = Modifier.weight(1f)) {
+                PurchaseNameAndDate(purchase)
+            }
+            PurchaseStateAction(purchase = purchase, onToggle = onToggle)
+        }
+    }
+}
+
+@Composable
+private fun PurchaseNameAndDate(purchase: PurchaseEntity) {
             Text(
                 text = purchase.itemName,
                 style = MaterialTheme.typography.bodyMedium,
@@ -794,8 +952,11 @@ private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
                 style = MaterialTheme.typography.labelSmall.tabularNums(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        CiChip(
+}
+
+@Composable
+private fun PurchaseStateAction(purchase: PurchaseEntity, onToggle: () -> Unit) {
+    CiChip(
             text = if (purchase.fulfilled) "已实现" else "未实现",
             container = if (purchase.fulfilled) {
                 MaterialTheme.colorScheme.tertiaryContainer
@@ -811,31 +972,30 @@ private fun PurchaseRow(purchase: PurchaseEntity, onToggle: () -> Unit) {
             leadingIcon = if (purchase.fulfilled) R.drawable.ic_ci_complete else null,
             iconContentDescription = if (purchase.fulfilled) "已实现" else null,
         )
-        if (purchase.fulfilled) {
-            TextButton(onClick = onToggle) {
-                Text("撤销", style = MaterialTheme.typography.labelMedium)
-            }
-        } else {
-            Button(
-                onClick = onToggle,
-                shape = CiShapes.pill,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiary,
-                    contentColor = MaterialTheme.colorScheme.onTertiary,
-                ),
-                contentPadding = PaddingValues(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
-            ) {
-                CiFunctionIcon(
-                    resourceId = R.drawable.ic_ci_complete,
-                    contentDescription = null,
-                    modifier = Modifier.size(CiSizes.compactIcon),
-                )
-                Text(
-                    "已实现",
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(start = CiSpacing.xs),
-                )
-            }
+    if (purchase.fulfilled) {
+        TextButton(onClick = onToggle) {
+            Text("撤销", style = MaterialTheme.typography.labelMedium)
+        }
+    } else {
+        Button(
+            onClick = onToggle,
+            shape = CiShapes.pill,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.tertiary,
+                contentColor = MaterialTheme.colorScheme.onTertiary,
+            ),
+            contentPadding = PaddingValues(horizontal = CiSpacing.md, vertical = CiSpacing.xs),
+        ) {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_complete,
+                contentDescription = null,
+                modifier = Modifier.size(CiSizes.compactIcon),
+            )
+            Text(
+                "已实现",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = CiSpacing.xs),
+            )
         }
     }
 }

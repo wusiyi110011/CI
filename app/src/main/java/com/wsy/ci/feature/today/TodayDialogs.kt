@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.wsy.ci.R
 import com.wsy.ci.core.data.Settlement
 import com.wsy.ci.core.db.TaskEntity
@@ -67,6 +68,7 @@ import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTheme
+import com.wsy.ci.core.designsystem.ciResponsiveDialogWidth
 import com.wsy.ci.core.designsystem.tabularNums
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.FocusOutcome
@@ -94,10 +96,13 @@ private fun CiCelebrateDialog(
         ),
         label = "结算淡入",
     )
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Surface(
             modifier = Modifier
-                .width(CiSizes.dialogCelebrateWidth)
+                .ciResponsiveDialogWidth(CiSizes.dialogCelebrateWidth)
                 .alpha(contentAlpha),
             shape = CiShapes.dialog,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,

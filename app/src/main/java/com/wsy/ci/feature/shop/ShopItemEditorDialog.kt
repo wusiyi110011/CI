@@ -18,6 +18,8 @@ package com.wsy.ci.feature.shop
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -32,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import com.wsy.ci.core.designsystem.CiFormField
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiSpacing
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,15 +44,19 @@ import androidx.compose.ui.unit.dp
 import com.wsy.ci.core.db.ShopItemEntity
 import com.wsy.ci.core.economy.Economy
 import com.wsy.ci.core.economy.Rarity
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 
 /** 商品上架/编辑。价格支持「元」快捷换算（1元≈20CI），品质按价格档自动建议、可手动改。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ShopItemEditorDialog(
     initial: ShopItemEntity,
     onSave: (ShopItemEntity) -> Unit,
     onDelete: ((ShopItemEntity) -> Unit)?,
     onDismiss: () -> Unit,
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     var name by remember { mutableStateOf(initial.name) }
     var description by remember { mutableStateOf(initial.description) }
     var emoji by remember { mutableStateOf(initial.emoji) }
@@ -74,17 +81,32 @@ fun ShopItemEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CiFormField(
-                        value = emoji, onValueChange = { emoji = it },
-                        label = "图标", singleLine = true,
-                        modifier = Modifier.width(80.dp),
-                    )
-                    CiFormField(
-                        value = name, onValueChange = { name = it },
-                        label = "名称", singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                if (isCompact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        CiFormField(
+                            value = emoji, onValueChange = { emoji = it },
+                            label = "图标", singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        CiFormField(
+                            value = name, onValueChange = { name = it },
+                            label = "名称", singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CiFormField(
+                            value = emoji, onValueChange = { emoji = it },
+                            label = "图标", singleLine = true,
+                            modifier = Modifier.width(80.dp),
+                        )
+                        CiFormField(
+                            value = name, onValueChange = { name = it },
+                            label = "名称", singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
                 CiFormField(
                     value = description, onValueChange = { description = it },
@@ -92,28 +114,51 @@ fun ShopItemEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = false,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CiFormField(
-                        value = priceText,
-                        onValueChange = { priceText = it; autoSuggestRarity() },
-                        label = "价格 CI", singleLine = true,
-                        modifier = Modifier.width(140.dp),
-                    )
-                    CiFormField(
-                        value = yuanText,
-                        onValueChange = {
-                            yuanText = it
-                            it.toDoubleOrNull()?.let { yuan ->
-                                priceText = (yuan * Economy.CI_PER_YUAN).toLong().toString()
-                                autoSuggestRarity()
-                            }
-                        },
-                        label = "按元换算(1元=20CI)", singleLine = true,
-                        modifier = Modifier.width(180.dp),
-                    )
+                if (isCompact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                        CiFormField(
+                            value = priceText,
+                            onValueChange = { priceText = it; autoSuggestRarity() },
+                            label = "价格 CI", singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        CiFormField(
+                            value = yuanText,
+                            onValueChange = {
+                                yuanText = it
+                                it.toDoubleOrNull()?.let { yuan ->
+                                    priceText = (yuan * Economy.CI_PER_YUAN).toLong().toString()
+                                    autoSuggestRarity()
+                                }
+                            },
+                            label = "按元换算(1元=20CI)", singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CiFormField(
+                            value = priceText,
+                            onValueChange = { priceText = it; autoSuggestRarity() },
+                            label = "价格 CI", singleLine = true,
+                            modifier = Modifier.width(140.dp),
+                        )
+                        CiFormField(
+                            value = yuanText,
+                            onValueChange = {
+                                yuanText = it
+                                it.toDoubleOrNull()?.let { yuan ->
+                                    priceText = (yuan * Economy.CI_PER_YUAN).toLong().toString()
+                                    autoSuggestRarity()
+                                }
+                            },
+                            label = "按元换算(1元=20CI)", singleLine = true,
+                            modifier = Modifier.width(180.dp),
+                        )
+                    }
                 }
                 Text("品质（影响每日精选出现概率 45/35/15/5）")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val rarityOptions: @Composable () -> Unit = {
                     Rarity.entries.forEach { r ->
                         FilterChip(
                             selected = rarity == r,
@@ -121,6 +166,14 @@ fun ShopItemEditorDialog(
                             label = { Text(r.label) },
                         )
                     }
+                }
+                if (isCompact) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) { rarityOptions() }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { rarityOptions() }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }

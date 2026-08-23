@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+)
 
 package com.wsy.ci.feature.today
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -44,6 +48,8 @@ import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
 import com.wsy.ci.core.designsystem.CiTheme
 import com.wsy.ci.core.designsystem.CiShapes
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +84,7 @@ fun TaskEditorDialog(
     deleteLabel: String = "删除",
     focusedMinutes: Int = 0,
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     var title by remember { mutableStateOf(initial.title) }
     var date by remember { mutableStateOf(formatDate(initial.epochDay)) }
     var start by remember { mutableStateOf(formatMinute(initial.startMinute)) }
@@ -105,29 +112,61 @@ fun TaskEditorDialog(
                     label = "任务名", singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isCompact) {
                     CiFormField(
                         value = date, onValueChange = { date = it },
                         label = "日期 yyyy-MM-dd", singleLine = true,
-                        modifier = Modifier.width(180.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    CiFormField(
-                        value = start, onValueChange = { start = it },
-                        label = "开始 HH:mm", singleLine = true,
-                        modifier = Modifier.width(140.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        CiFormField(
+                            value = start, onValueChange = { start = it },
+                            label = "开始 HH:mm", singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        CiFormField(
+                            value = end, onValueChange = { end = it },
+                            label = "结束 HH:mm", singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Text(
+                        text = "结束时间早于开始时间时，自动记为次日结束",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    CiFormField(
-                        value = end, onValueChange = { end = it },
-                        label = "结束 HH:mm（早于开始即次日）", singleLine = true,
-                        modifier = Modifier.width(140.dp),
-                    )
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CiFormField(
+                            value = date, onValueChange = { date = it },
+                            label = "日期 yyyy-MM-dd", singleLine = true,
+                            modifier = Modifier.width(180.dp),
+                        )
+                        CiFormField(
+                            value = start, onValueChange = { start = it },
+                            label = "开始 HH:mm", singleLine = true,
+                            modifier = Modifier.width(140.dp),
+                        )
+                        CiFormField(
+                            value = end, onValueChange = { end = it },
+                            label = "结束 HH:mm（早于开始即次日）", singleLine = true,
+                            modifier = Modifier.width(140.dp),
+                        )
+                    }
                 }
                 Text(
                     text = "难度",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                ) {
                     Difficulty.entries.forEach { option ->
                         val colors = CiTheme.colors.difficulty(option)
                         CiChip(

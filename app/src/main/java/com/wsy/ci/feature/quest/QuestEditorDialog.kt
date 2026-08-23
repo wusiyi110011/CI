@@ -20,6 +20,8 @@ package com.wsy.ci.feature.quest
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -40,6 +42,8 @@ import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +62,7 @@ import java.time.format.DateTimeParseException
 
 /** [mains] 是可供支线挂靠的主线列表（进行中的 + 当前已选中的那条）。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun QuestEditorDialog(
     initial: QuestEntity,
     domains: List<DomainEntity>,
@@ -65,6 +70,7 @@ fun QuestEditorDialog(
     onSave: (QuestEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     var title by remember { mutableStateOf(initial.title) }
     var description by remember { mutableStateOf(initial.description) }
     var type by remember { mutableStateOf(initial.type) }
@@ -84,21 +90,43 @@ fun QuestEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = type == QuestType.MAIN,
-                        onClick = { type = QuestType.MAIN },
-                        label = {
-                            QuestTypeLabel(R.drawable.ic_ci_main_quest, "主线（大目标，有截止）")
-                        },
-                    )
-                    FilterChip(
-                        selected = type == QuestType.SIDE,
-                        onClick = { type = QuestType.SIDE },
-                        label = {
-                            QuestTypeLabel(R.drawable.ic_ci_side_quest, "支线（习惯，吃连击）")
-                        },
-                    )
+                if (isCompact) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                    ) {
+                        FilterChip(
+                            selected = type == QuestType.MAIN,
+                            onClick = { type = QuestType.MAIN },
+                            label = {
+                                QuestTypeLabel(R.drawable.ic_ci_main_quest, "主线（大目标，有截止）")
+                            },
+                        )
+                        FilterChip(
+                            selected = type == QuestType.SIDE,
+                            onClick = { type = QuestType.SIDE },
+                            label = {
+                                QuestTypeLabel(R.drawable.ic_ci_side_quest, "支线（习惯，吃连击）")
+                            },
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = type == QuestType.MAIN,
+                            onClick = { type = QuestType.MAIN },
+                            label = {
+                                QuestTypeLabel(R.drawable.ic_ci_main_quest, "主线（大目标，有截止）")
+                            },
+                        )
+                        FilterChip(
+                            selected = type == QuestType.SIDE,
+                            onClick = { type = QuestType.SIDE },
+                            label = {
+                                QuestTypeLabel(R.drawable.ic_ci_side_quest, "支线（习惯，吃连击）")
+                            },
+                        )
+                    }
                 }
                 CiFormField(
                     value = title, onValueChange = { title = it },

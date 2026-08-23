@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -45,6 +44,7 @@ import com.wsy.ci.core.designsystem.CiProgressBar
 import com.wsy.ci.core.designsystem.CiShapes
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.ciResponsiveDialogWidth
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.core.voice.VoiceTarget
 import com.wsy.ci.core.voice.label
@@ -109,8 +109,10 @@ fun VoiceConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = CiShapes.dialog,
-        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        modifier = Modifier
+            .ciResponsiveDialogWidth(CiSizes.dialogFormWidth),
         icon = {
             CiFunctionIcon(
                 resourceId = R.drawable.ic_ci_ai_schedule,
@@ -197,7 +199,7 @@ private fun VoiceFirstUseDialog(onDismiss: () -> Unit) {
         icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_ai_schedule, contentDescription = null) },
         title = { Text("语音指令已就绪") },
         text = {
-            Text("长按左侧本地 AI 图标说话，松手识别，向上滑动后松手可取消。会改动数据的指令默认先显示预览，危险操作不会自动执行。")
+            Text("长按本地 AI 图标说话，松手识别，向上滑动后松手可取消。会改动数据的指令默认先显示预览，危险操作不会自动执行。")
         },
         confirmButton = { Button(onClick = onDismiss, shape = CiShapes.pill) { Text("知道了") } },
     )
@@ -213,8 +215,10 @@ private fun VoiceDisambiguationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = CiShapes.dialog,
-        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        modifier = Modifier
+            .ciResponsiveDialogWidth(CiSizes.dialogFormWidth),
         title = { Text("你指的是哪一个？") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(CiSpacing.sm)) {
@@ -241,8 +245,10 @@ fun VoiceScheduleResultDialog(tasks: List<TaskEntity>, onOpenCalendar: () -> Uni
     val sorted = tasks.sortedWith(compareBy({ it.epochDay }, { it.startMinute }))
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = CiShapes.dialog,
-        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        modifier = Modifier
+            .ciResponsiveDialogWidth(CiSizes.dialogFormWidth),
         icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_schedule, contentDescription = null) },
         title = { Text("查到 ${sorted.size} 条安排") },
         text = {
@@ -360,8 +366,10 @@ private fun VoiceSkillResultDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = CiShapes.dialog,
-        modifier = Modifier.width(CiSizes.dialogFormWidth),
+        modifier = Modifier
+            .ciResponsiveDialogWidth(CiSizes.dialogFormWidth),
         icon = { CiFunctionIcon(resourceId = R.drawable.ic_ci_ai_schedule, contentDescription = null) },
         title = { Text(title) },
         text = { Text(message) },

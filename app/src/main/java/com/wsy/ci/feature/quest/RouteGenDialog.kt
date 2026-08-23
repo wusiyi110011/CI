@@ -47,6 +47,8 @@ import com.wsy.ci.R
 import com.wsy.ci.core.designsystem.CiFunctionIcon
 import com.wsy.ci.core.designsystem.CiSizes
 import com.wsy.ci.core.designsystem.CiSpacing
+import com.wsy.ci.core.designsystem.CiWindowSize
+import com.wsy.ci.core.designsystem.LocalCiWindowSize
 import com.wsy.ci.core.util.TimeFormat
 import com.wsy.ci.llm.RoutePlan
 
@@ -58,9 +60,11 @@ fun RouteGenDialog(
     onConfirm: (RoutePlan) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isCompact = LocalCiWindowSize.current == CiWindowSize.COMPACT
     when (state) {
         RouteGenState.Idle, is RouteGenState.Error -> RouteInputDialog(
             error = (state as? RouteGenState.Error)?.message,
+            compact = isCompact,
             onGenerate = onGenerate,
             onDismiss = onDismiss,
         )
@@ -90,6 +94,7 @@ private fun RouteInputDialog(
     error: String?,
     onGenerate: (String, Int, String) -> Unit,
     onDismiss: () -> Unit,
+    compact: Boolean = false,
 ) {
     var domain by remember { mutableStateOf("") }
     var hours by remember { mutableStateOf("10") }
@@ -122,7 +127,7 @@ private fun RouteInputDialog(
                 CiFormField(
                     value = hours, onValueChange = { hours = it },
                     label = "每周可投入小时数", singleLine = true,
-                    modifier = Modifier.width(200.dp),
+                    modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(200.dp),
                 )
                 CiFormField(
                     value = goal, onValueChange = { goal = it },
