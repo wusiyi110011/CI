@@ -16,10 +16,14 @@
 
 package com.wsy.ci.feature.settings
 
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import com.wsy.ci.core.backup.DataBackupManager
 import com.wsy.ci.core.backup.DataBackupOperation
 import com.wsy.ci.widget.CiWidgetUpdater
-import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,8 +47,13 @@ class AppDataBackupController(
                 BackupItem(it.id, it.createdAtMillis, it.sizeBytes, it.label)
             },
             backingUp = source.operation == DataBackupOperation.CREATING,
+            exportingId = source.targetId?.takeIf { source.operation == DataBackupOperation.EXPORTING },
+            preparingImport = source.operation == DataBackupOperation.PREPARING_IMPORT,
             importingId = source.targetId?.takeIf { source.operation == DataBackupOperation.RESTORING },
             deletingId = source.targetId?.takeIf { source.operation == DataBackupOperation.DELETING },
+            pendingImport = source.pendingImport?.let {
+                BackupItem(it.id, it.createdAtMillis, it.sizeBytes, it.label)
+            },
             message = source.message?.takeUnless { it.contains("失败") },
             errorMessage = source.message?.takeIf { it.contains("失败") },
         )
@@ -64,5 +73,50 @@ class AppDataBackupController(
 
     override fun deleteBackup(id: String) {
         scope.launch { manager.deleteBackup(id) }
+    }
+
+    override fun shareBackup(id: String) {
+        scope.launch {
+            val file = manager.exportBackup(id).getOrNull() ?: return@launch
+            runCatching {
+                val uri = FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    file,
+                )
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = ClipData.newUri(appContext.contentResolver, file.name, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                appContext.startActivity(
+                    Intent.createChooser(send, "分享复利数据备份")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.onSuccess {
+                manager.setMessage("已打开分享面板")
+            }.onFailure { error ->
+                manager.setMessage("分享失败：${error.message ?: "没有可用的分享应用"}")
+            }
+        }
+    }
+
+    override fun prepareImport(uri: Uri) {
+        scope.launch {
+            manager.prepareExternalBackup {
+                appContext.contentResolver.openInputStream(uri) ?: error("无法读取所选文件")
+            }
+        }
+    }
+
+    override fun restorePreparedBackup() {
+        scope.launch {
+            if (manager.restorePreparedBackup().isSuccess) CiWidgetUpdater.updateAll(appContext)
+        }
+    }
+
+    override fun cancelPreparedBackup() {
+        manager.cancelPreparedBackup()
     }
 }

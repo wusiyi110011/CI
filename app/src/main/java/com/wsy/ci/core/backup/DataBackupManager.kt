@@ -22,7 +22,7 @@ import com.wsy.ci.core.db.CiDatabase
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.security.MessageDigest
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,10 +47,11 @@ data class DataBackupState(
     val backups: List<DataBackupItem> = emptyList(),
     val operation: DataBackupOperation = DataBackupOperation.IDLE,
     val targetId: String? = null,
+    val pendingImport: DataBackupItem? = null,
     val message: String? = null,
 )
 
-enum class DataBackupOperation { IDLE, CREATING, RESTORING, DELETING }
+enum class DataBackupOperation { IDLE, CREATING, EXPORTING, PREPARING_IMPORT, RESTORING, DELETING }
 
 /**
  * 应用内数据备份管理器。
@@ -70,10 +71,14 @@ class DataBackupManager(
     private val appContext = context.applicationContext
     private val io = dispatcher
     private val root = File(appContext.filesDir, BACKUP_DIRECTORY)
+    private val sharedRoot = File(appContext.cacheDir, SHARED_BACKUP_DIRECTORY)
+    private val pendingRoot = File(appContext.cacheDir, PENDING_IMPORT_DIRECTORY)
     private val _state = MutableStateFlow(DataBackupState())
     val state: StateFlow<DataBackupState> = _state.asStateFlow()
 
     init {
+        cleanupSharedBackups()
+        pendingRoot.deleteRecursively()
         refresh()
     }
 
@@ -91,26 +96,26 @@ class DataBackupManager(
     private fun createSnapshot(): DataBackupItem {
         root.mkdirs()
         val now = System.currentTimeMillis()
-        val id = "${FILE_TIME.format(Date(now))}-${UUID.randomUUID().toString().take(8)}"
+        val id = newBackupId(now)
         val staging = File(root, ".$id.tmp")
         val destination = File(root, id)
         check(staging.mkdirs()) { "无法创建备份暂存目录" }
         try {
-            val snapshot = File(staging, DATABASE_FILE)
+            val snapshot = File(staging, BackupArchive.DATABASE_FILE)
             database.openHelper.writableDatabase.execSQL(
                 "VACUUM INTO ?",
                 arrayOf(snapshot.absolutePath),
             )
             validateDatabase(snapshot)
-            writeStringPreferences("app_settings", File(staging, APP_SETTINGS_FILE))
-            writeStringPreferences("llm_routes", File(staging, LLM_ROUTES_FILE))
+            writeStringPreferences("app_settings", File(staging, BackupArchive.APP_SETTINGS_FILE))
+            writeStringPreferences("llm_routes", File(staging, BackupArchive.LLM_ROUTES_FILE))
             writeMetadata(
-                file = File(staging, METADATA_FILE),
+                file = File(staging, BackupArchive.METADATA_FILE),
                 createdAtMillis = now,
                 databaseSize = snapshot.length(),
-                databaseSha256 = sha256(snapshot),
-                appSettingsFile = File(staging, APP_SETTINGS_FILE),
-                llmRoutesFile = File(staging, LLM_ROUTES_FILE),
+                databaseSha256 = BackupArchive.sha256(snapshot),
+                appSettingsFile = File(staging, BackupArchive.APP_SETTINGS_FILE),
+                llmRoutesFile = File(staging, BackupArchive.LLM_ROUTES_FILE),
             )
             check(staging.renameTo(destination)) { "无法完成备份原子切换" }
             return scanBackup(destination) ?: error("备份校验失败")
@@ -127,29 +132,136 @@ class DataBackupManager(
     ) {
         val source = safeBackupDirectory(id)
         val item = scanBackup(source) ?: error("备份不存在或已损坏")
-        val sourceDatabase = File(source, DATABASE_FILE)
+        restoreValidatedBackup(source, item)
+    }
+
+    suspend fun exportBackup(id: String): Result<File> = runOperation(
+        operation = DataBackupOperation.EXPORTING,
+        targetId = id,
+        errorPrefix = "导出失败",
+    ) {
+        cleanupSharedBackups()
+        val source = safeBackupDirectory(id)
+        val item = scanBackup(source) ?: error("备份不存在或已损坏")
+        validateDatabase(File(source, BackupArchive.DATABASE_FILE))
+        sharedRoot.mkdirs()
+        val destination = File(
+            sharedRoot,
+            "复利数据备份-${FILE_TIME.format(Date(item.createdAtMillis))}.zip",
+        )
+        BackupArchive.pack(source, destination)
+        destination
+    }
+
+    suspend fun prepareExternalBackup(openInput: () -> InputStream): Result<DataBackupItem> = runOperation(
+        operation = DataBackupOperation.PREPARING_IMPORT,
+        errorPrefix = "文件校验失败",
+    ) {
+        _state.value = _state.value.copy(pendingImport = null)
+        pendingRoot.deleteRecursively()
+        check(pendingRoot.mkdirs()) { "无法创建导入暂存目录" }
+        val now = System.currentTimeMillis()
+        val id = newBackupId(now)
+        val staging = File(pendingRoot, id)
+        try {
+            openInput().use { BackupArchive.extract(it, staging) }
+            val info = BackupArchive.validate(staging, DATABASE_VERSION)
+            validateDatabase(File(staging, BackupArchive.DATABASE_FILE))
+            val item = DataBackupItem(
+                id = id,
+                createdAtMillis = info.createdAtMillis,
+                sizeBytes = info.sizeBytes,
+                label = DISPLAY_TIME.format(Date(info.createdAtMillis)),
+            )
+            _state.value = _state.value.copy(pendingImport = item, message = "备份文件已校验")
+            item
+        } catch (error: Throwable) {
+            pendingRoot.deleteRecursively()
+            throw error
+        }
+    }
+
+    suspend fun restorePreparedBackup(): Result<Unit> {
+        val item = _state.value.pendingImport
+            ?: return Result.failure(IllegalStateException("没有待导入的备份文件"))
+        return runOperation(
+            operation = DataBackupOperation.RESTORING,
+            targetId = item.id,
+            errorPrefix = "导入失败",
+        ) {
+            val staging = safePendingDirectory(item.id)
+            val info = BackupArchive.validate(staging, DATABASE_VERSION)
+            validateDatabase(File(staging, BackupArchive.DATABASE_FILE))
+            root.mkdirs()
+            val destination = safeBackupDirectory(item.id)
+            check(!destination.exists()) { "同名备份已存在" }
+            if (!staging.renameTo(destination)) {
+                staging.copyRecursively(destination, overwrite = false)
+                check(staging.deleteRecursively()) { "无法清理导入暂存文件" }
+            }
+            pendingRoot.deleteRecursively()
+            val stored = DataBackupItem(
+                id = item.id,
+                createdAtMillis = info.createdAtMillis,
+                sizeBytes = info.sizeBytes,
+                label = DISPLAY_TIME.format(Date(info.createdAtMillis)),
+            )
+            _state.value = _state.value.copy(pendingImport = null)
+            restoreValidatedBackup(destination, stored)
+        }
+    }
+
+    fun cancelPreparedBackup() {
+        pendingRoot.deleteRecursively()
+        _state.value = _state.value.copy(pendingImport = null, message = null)
+    }
+
+    fun setMessage(message: String) {
+        _state.value = _state.value.copy(message = message)
+    }
+
+    private fun restoreValidatedBackup(source: File, item: DataBackupItem) {
+        BackupArchive.validate(source, DATABASE_VERSION)
+        val sourceDatabase = File(source, BackupArchive.DATABASE_FILE)
         validateDatabase(sourceDatabase)
-        val desiredAppSettings = readStringPreferences(File(source, APP_SETTINGS_FILE))
-        val desiredRoutes = readStringPreferences(File(source, LLM_ROUTES_FILE))
+        val desiredAppSettings = readStringPreferences(File(source, BackupArchive.APP_SETTINGS_FILE))
+        val desiredRoutes = readStringPreferences(File(source, BackupArchive.LLM_ROUTES_FILE))
         val currentAppSettings = readCurrentStringPreferences("app_settings")
         val currentRoutes = readCurrentStringPreferences("llm_routes")
         // 导入前强制留一份当前数据快照；即使用户选错，仍能从列表一键恢复。
         val rollback = createSnapshot()
-        try {
-            restoreTables(database.openHelper.writableDatabase, sourceDatabase)
-            check(writeStringPreferences("app_settings", desiredAppSettings)) { "应用设置写入失败" }
-            check(writeStringPreferences("llm_routes", desiredRoutes)) { "模型路由写入失败" }
-        } catch (error: Throwable) {
-            // 数据库与设置任一环节失败，都用刚创建的快照恢复导入前状态。
-            val rollbackDirectory = safeBackupDirectory(rollback.id)
-            restoreTables(database.openHelper.writableDatabase, File(rollbackDirectory, DATABASE_FILE))
-            writeStringPreferences("app_settings", currentAppSettings)
-            writeStringPreferences("llm_routes", currentRoutes)
-            throw error
-        }
+        BackupRestoreGuard.run(
+            apply = {
+                restoreTables(database.openHelper.writableDatabase, sourceDatabase)
+                check(writeStringPreferences("app_settings", desiredAppSettings)) { "应用设置写入失败" }
+                check(writeStringPreferences("llm_routes", desiredRoutes)) { "模型路由写入失败" }
+            },
+            rollback = {
+                // 数据库与设置任一环节失败，都用刚创建的快照恢复导入前状态。
+                val rollbackDirectory = safeBackupDirectory(rollback.id)
+                val failures = listOf(
+                    runCatching {
+                        restoreTables(
+                            database.openHelper.writableDatabase,
+                            File(rollbackDirectory, BackupArchive.DATABASE_FILE),
+                        )
+                    }.exceptionOrNull(),
+                    runCatching {
+                        check(writeStringPreferences("app_settings", currentAppSettings)) { "回滚应用设置失败" }
+                    }.exceptionOrNull(),
+                    runCatching {
+                        check(writeStringPreferences("llm_routes", currentRoutes)) { "回滚模型路由失败" }
+                    }.exceptionOrNull(),
+                ).filterNotNull()
+                if (failures.isNotEmpty()) {
+                    throw IllegalStateException("导入失败后的自动回滚未完整完成", failures.first()).apply {
+                        failures.drop(1).forEach(::addSuppressed)
+                    }
+                }
+            },
+        )
         onSettingsRestored()
         _state.value = _state.value.copy(message = "已导入 ${item.label}")
-        Unit
     }
 
     suspend fun deleteBackup(id: String): Result<Unit> = runOperation(
@@ -283,15 +395,15 @@ class DataBackupManager(
         llmRoutesFile: File,
     ) {
         Properties().apply {
-            setProperty("formatVersion", FORMAT_VERSION.toString())
+            setProperty("formatVersion", BackupArchive.FORMAT_VERSION.toString())
             setProperty("databaseVersion", DATABASE_VERSION.toString())
             setProperty("createdAtMillis", createdAtMillis.toString())
             setProperty("databaseSize", databaseSize.toString())
             setProperty("databaseSha256", databaseSha256)
             setProperty("appSettingsSize", appSettingsFile.length().toString())
-            setProperty("appSettingsSha256", sha256(appSettingsFile))
+            setProperty("appSettingsSha256", BackupArchive.sha256(appSettingsFile))
             setProperty("llmRoutesSize", llmRoutesFile.length().toString())
-            setProperty("llmRoutesSha256", sha256(llmRoutesFile))
+            setProperty("llmRoutesSha256", BackupArchive.sha256(llmRoutesFile))
         }.also { properties -> FileOutputStream(file).use { properties.store(it, null) } }
     }
 
@@ -302,55 +414,47 @@ class DataBackupManager(
         .sortedByDescending { it.createdAtMillis }
 
     private fun scanBackup(directory: File): DataBackupItem? = runCatching {
-        val metadata = Properties().apply {
-            FileInputStream(File(directory, METADATA_FILE)).use(::load)
-        }
-        check(metadata.getProperty("formatVersion")?.toInt() == FORMAT_VERSION)
-        val snapshot = File(directory, DATABASE_FILE)
-        check(snapshot.length() == metadata.getProperty("databaseSize").toLong())
-        check(sha256(snapshot) == metadata.getProperty("databaseSha256"))
-        val appSettings = File(directory, APP_SETTINGS_FILE)
-        check(appSettings.length() == metadata.getProperty("appSettingsSize").toLong())
-        check(sha256(appSettings) == metadata.getProperty("appSettingsSha256"))
-        val llmRoutes = File(directory, LLM_ROUTES_FILE)
-        check(llmRoutes.length() == metadata.getProperty("llmRoutesSize").toLong())
-        check(sha256(llmRoutes) == metadata.getProperty("llmRoutesSha256"))
-        val createdAt = metadata.getProperty("createdAtMillis").toLong()
+        val info = BackupArchive.validate(directory)
         DataBackupItem(
             id = directory.name,
-            createdAtMillis = createdAt,
-            sizeBytes = directory.walkTopDown().filter { it.isFile }.sumOf { it.length() },
-            label = DISPLAY_TIME.format(Date(createdAt)),
+            createdAtMillis = info.createdAtMillis,
+            sizeBytes = info.sizeBytes,
+            label = DISPLAY_TIME.format(Date(info.createdAtMillis)),
         )
     }.getOrNull()
 
     private fun safeBackupDirectory(id: String): File {
-        check(id.matches(Regex("[0-9]{8}-[0-9]{6}-[a-f0-9]{8}"))) { "非法备份标识" }
+        checkBackupId(id)
         return File(root, id).canonicalFile.also {
             check(it.parentFile == root.canonicalFile) { "非法备份路径" }
         }
     }
 
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
+    private fun safePendingDirectory(id: String): File {
+        checkBackupId(id)
+        return File(pendingRoot, id).canonicalFile.also {
+            check(it.parentFile == pendingRoot.canonicalFile) { "非法导入暂存路径" }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun checkBackupId(id: String) {
+        check(id.matches(Regex("[0-9]{8}-[0-9]{6}-[a-f0-9]{8}"))) { "非法备份标识" }
+    }
+
+    private fun newBackupId(now: Long): String =
+        "${FILE_TIME.format(Date(now))}-${UUID.randomUUID().toString().take(8)}"
+
+    private fun cleanupSharedBackups(now: Long = System.currentTimeMillis()) {
+        sharedRoot.listFiles().orEmpty().forEach { file ->
+            if (now - file.lastModified() > SHARED_BACKUP_MAX_AGE_MILLIS) file.deleteRecursively()
+        }
     }
 
     private companion object {
         const val BACKUP_DIRECTORY = "data-backups"
-        const val DATABASE_FILE = "ci.db"
-        const val APP_SETTINGS_FILE = "app_settings.xml"
-        const val LLM_ROUTES_FILE = "llm_routes.xml"
-        const val METADATA_FILE = "backup.properties"
-        const val FORMAT_VERSION = 1
+        const val SHARED_BACKUP_DIRECTORY = "shared-backups"
+        const val PENDING_IMPORT_DIRECTORY = "pending-backup-import"
+        const val SHARED_BACKUP_MAX_AGE_MILLIS = 24L * 60L * 60L * 1000L
         const val DATABASE_VERSION = 5
         val TABLES = listOf(
             "domains", "quests", "tasks", "sessions", "ledger",

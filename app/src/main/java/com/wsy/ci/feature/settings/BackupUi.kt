@@ -16,6 +16,7 @@
 
 package com.wsy.ci.feature.settings
 
+import android.net.Uri
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -35,8 +36,11 @@ data class BackupItem(
 data class DataBackupUiState(
     val entries: List<BackupItem> = emptyList(),
     val backingUp: Boolean = false,
+    val exportingId: String? = null,
+    val preparingImport: Boolean = false,
     val importingId: String? = null,
     val deletingId: String? = null,
+    val pendingImport: BackupItem? = null,
     val message: String? = null,
     val errorMessage: String? = null,
 )
@@ -54,6 +58,10 @@ interface DataBackupController {
     fun createBackup()
     fun restoreBackup(id: String)
     fun deleteBackup(id: String)
+    fun shareBackup(id: String)
+    fun prepareImport(uri: Uri)
+    fun restorePreparedBackup()
+    fun cancelPreparedBackup()
 }
 
 /** 预览与独立 UI 测试用的占位控制器，不执行真实文件读写。 */
@@ -95,6 +103,36 @@ class InMemoryBackupController : DataBackupController {
             message = if (existed) "备份已删除（占位）" else "备份不存在或已被删除",
             errorMessage = if (existed) null else "找不到备份文件",
         )
+    }
+
+    override fun shareBackup(id: String) {
+        val existed = mutableState.value.entries.any { it.id == id }
+        mutableState.value = mutableState.value.copy(
+            message = if (existed) "已打开分享面板（占位）" else "备份不存在或已被删除",
+            errorMessage = if (existed) null else "找不到备份文件",
+        )
+    }
+
+    override fun prepareImport(uri: Uri) {
+        val now = System.currentTimeMillis()
+        mutableState.value = mutableState.value.copy(
+            pendingImport = BackupItem(now.toString(), now, 0L, "外部备份（占位）"),
+            message = "备份文件已校验（占位）",
+            errorMessage = null,
+        )
+    }
+
+    override fun restorePreparedBackup() {
+        val pending = mutableState.value.pendingImport
+        mutableState.value = mutableState.value.copy(
+            pendingImport = null,
+            message = pending?.let { "已导入 ${formatBackupTime(it.createdAtMillis)} 的备份（占位）" },
+            errorMessage = if (pending == null) "没有待导入的备份文件" else null,
+        )
+    }
+
+    override fun cancelPreparedBackup() {
+        mutableState.value = mutableState.value.copy(pendingImport = null, message = null, errorMessage = null)
     }
 }
 

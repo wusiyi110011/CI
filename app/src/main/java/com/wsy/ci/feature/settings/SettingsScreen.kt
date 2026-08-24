@@ -17,6 +17,8 @@
 package com.wsy.ci.feature.settings
 
 import android.net.ConnectivityManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
@@ -131,6 +133,7 @@ fun SettingsScreen(
     }).collectAsStateWithLifecycle()
     val backupState by dataBackupController.state.collectAsStateWithLifecycle()
     val backupBusy = backupState.backingUp ||
+        backupState.exportingId != null || backupState.preparingImport ||
         backupState.importingId != null || backupState.deletingId != null
     val keyConfigured by viewModel.keyConfigured.collectAsStateWithLifecycle()
     val routes by viewModel.routes.collectAsStateWithLifecycle()
@@ -146,6 +149,9 @@ fun SettingsScreen(
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(dataBackupController::prepareImport)
+    }
     var pendingMeteredTarget by remember { mutableStateOf<MeteredDownloadTarget?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showBackups by remember { mutableStateOf(false) }
@@ -166,6 +172,13 @@ fun SettingsScreen(
         if (!backupBusy) {
             dataBackupController.refresh()
             showBackups = true
+        }
+    }
+    val openBackupFile = {
+        if (!backupBusy) {
+            backupImportLauncher.launch(
+                arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"),
+            )
         }
     }
 
@@ -340,6 +353,7 @@ fun SettingsScreen(
                                 onTestVision = localController::testVision,
                                 onCancelInference = localController::cancelInferenceAndStop,
                                 onBackup = dataBackupController::createBackup,
+                                onImportFile = openBackupFile,
                                 onOpenImport = openBackupList,
                                 showBackup = false,
                                 compact = isCompact,
@@ -363,6 +377,7 @@ fun SettingsScreen(
                                 DataBackupSection(
                                     state = backupState,
                                     onBackup = dataBackupController::createBackup,
+                                    onImportFile = openBackupFile,
                                     onOpenImport = openBackupList,
                                     compact = isCompact,
                                 )
@@ -425,7 +440,30 @@ fun SettingsScreen(
             state = backupState,
             onDismiss = { showBackups = false },
             onRestore = { if (!backupBusy) confirmRestoreId = it },
+            onShare = { if (!backupBusy) dataBackupController.shareBackup(it) },
             onDelete = { if (!backupBusy) confirmDeleteBackupId = it },
+        )
+    }
+    backupState.pendingImport?.let { item ->
+        AlertDialog(
+            onDismissRequest = dataBackupController::cancelPreparedBackup,
+            title = { Text("确认从文件恢复？") },
+            text = {
+                Text(
+                    "备份时间：${formatBackupTime(item.createdAtMillis)}\n" +
+                        "文件大小：${formatBackupSize(item.sizeBytes)}\n\n" +
+                        "当前本机数据会被覆盖，恢复前将自动保留一份回滚备份。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = dataBackupController::restorePreparedBackup,
+                    enabled = !backupBusy,
+                ) { Text("确认恢复") }
+            },
+            dismissButton = {
+                TextButton(onClick = dataBackupController::cancelPreparedBackup) { Text("取消") }
+            },
         )
     }
     confirmRestoreId?.let { id ->
@@ -571,6 +609,7 @@ private fun LocalModelAndBackupCard(
     onTestVision: () -> Unit,
     onCancelInference: () -> Unit,
     onBackup: () -> Unit,
+    onImportFile: () -> Unit,
     onOpenImport: () -> Unit,
     showBackup: Boolean = true,
     compact: Boolean = false,
@@ -771,6 +810,7 @@ private fun LocalModelAndBackupCard(
             DataBackupSection(
                 state = backupState,
                 onBackup = onBackup,
+                onImportFile = onImportFile,
                 onOpenImport = onOpenImport,
                 compact = compact,
             )
@@ -962,13 +1002,16 @@ private fun serviceStateLabel(state: LocalModelServiceState): String = when (sta
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun DataBackupSection(
     state: DataBackupUiState,
     onBackup: () -> Unit,
+    onImportFile: () -> Unit,
     onOpenImport: () -> Unit,
     compact: Boolean = false,
 ) {
-    val busy = state.backingUp || state.importingId != null || state.deletingId != null
+    val busy = state.backingUp || state.exportingId != null || state.preparingImport ||
+        state.importingId != null || state.deletingId != null
     val heading: @Composable () -> Unit = {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1002,7 +1045,13 @@ private fun DataBackupSection(
         )
     }
     val actions: @Composable () -> Unit = {
-        Row(horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+        ) {
+            OutlinedButton(onClick = onImportFile, enabled = !busy, shape = CiShapes.pill) {
+                Text(if (state.preparingImport) "校验中…" else "从文件导入")
+            }
             OutlinedButton(onClick = onOpenImport, enabled = !busy, shape = CiShapes.pill) {
                 Text("管理备份")
             }
@@ -1040,11 +1089,12 @@ private fun BackupListDialog(
     state: DataBackupUiState,
     onDismiss: () -> Unit,
     onRestore: (String) -> Unit,
+    onShare: (String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择备份导入") },
+        title = { Text("管理备份") },
         text = {
             if (state.entries.isEmpty()) {
                 Text("暂无备份。点击设置页中的「一键备份」创建。")
@@ -1070,7 +1120,10 @@ private fun BackupListDialog(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            TextButton(onClick = { onRestore(item.id) }) { Text("导入") }
+                            TextButton(onClick = { onRestore(item.id) }) { Text("恢复") }
+                            TextButton(onClick = { onShare(item.id) }) {
+                                Text(if (state.exportingId == item.id) "导出中…" else "分享")
+                            }
                             TextButton(onClick = { onDelete(item.id) }) { Text("删除") }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
