@@ -35,4 +35,5 @@
     <item name="ic_ci_stop" type="drawable">@drawable/ic_ci_stop_dark</item>
     <item name="ic_ci_open" type="drawable">@drawable/ic_ci_open_dark</item>
     <item name="ic_ci_dropdown" type="drawable">@drawable/ic_ci_dropdown_dark</item>
+    <item name="ic_ci_search" type="drawable">@drawable/ic_ci_search_dark</item>
 </resources>

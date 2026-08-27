@@ -38,6 +38,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,6 +47,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -63,7 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,6 +103,7 @@ import com.wsy.ci.core.porting.ShopImport
 import com.wsy.ci.core.shop.FulfillFilter
 import com.wsy.ci.core.shop.PurchaseBoard
 import com.wsy.ci.core.shop.PurchaseFilter
+import com.wsy.ci.core.shop.ShopSearch
 import com.wsy.ci.core.shop.TimeFilter
 import com.wsy.ci.core.util.TimeFormat
 
@@ -151,6 +157,15 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
     var showImport by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
+    // 搜索关键词只属于这一屏的临时 UI 状态；切换 tab 时保留——
+    // 同一个词可以直接接着过滤相邻页（货架搜不到再去兑换记录里翻翻）。
+    var searchActive by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searchActive) {
+        if (searchActive) searchFocus.requestFocus()
+    }
+
     LaunchedEffect(message) {
         message?.let {
             snackbar.showSnackbar(it)
@@ -190,7 +205,25 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             if (isCompact) {
                 CiScreenHeader(
                     title = "商城",
-                    trailing = { CiBalanceChip(balance) },
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            ShopSearchToggle(
+                                active = searchActive,
+                                onToggle = {
+                                    if (searchActive) {
+                                        searchActive = false
+                                        query = ""
+                                    } else {
+                                        searchActive = true
+                                    }
+                                },
+                            )
+                            CiBalanceChip(balance)
+                        }
+                    },
                 )
                 CiUnderlineTabs(
                     options = ShopTab.entries,
@@ -236,7 +269,25 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                 CiScreenHeader(
                     title = "商城",
                     subtitle = "把长期投入兑换成真实休息与奖励",
-                    trailing = { CiBalanceChip(balance) },
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CiSpacing.xs),
+                        ) {
+                            ShopSearchToggle(
+                                active = searchActive,
+                                onToggle = {
+                                    if (searchActive) {
+                                        searchActive = false
+                                        query = ""
+                                    } else {
+                                        searchActive = true
+                                    }
+                                },
+                            )
+                            CiBalanceChip(balance)
+                        }
+                    },
                 )
 
                 Row(
@@ -285,36 +336,100 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
                 }
             }
 
-            when (tab) {
-                ShopTab.PICKS -> DailyPicksWall(
-                    picks = picks.mapNotNull { pick ->
-                        items.firstOrNull { it.id == pick.itemId }?.let { pick to it }
+            if (searchActive) {
+                ShopSearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    hint = when (tab) {
+                        ShopTab.PICKS -> "搜索今日精选"
+                        ShopTab.SHELF -> "搜索商品名或描述"
+                        ShopTab.MINE -> "搜索兑换过的奖励"
+                        ShopTab.LEDGER -> "搜索备注或类型（如：兑换）"
                     },
-                    balance = balance,
-                    onBuy = { pick, item -> viewModel.purchase(item.id, pick.id) },
-                    compact = isCompact,
-                    modifier = Modifier.weight(1f),
+                    onClose = {
+                        searchActive = false
+                        query = ""
+                    },
+                    focusRequester = searchFocus,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                ShopTab.SHELF -> ShelfList(
-                    items = items,
-                    balance = balance,
-                    onBuy = { viewModel.purchase(it.id) },
-                    onEdit = { editing = it },
-                    compact = isCompact,
-                    modifier = Modifier.weight(1f),
-                )
-                ShopTab.MINE -> PurchaseList(
-                    purchases = purchases,
-                    filter = purchaseFilter,
-                    onToggleRarity = viewModel::toggleRarityFilter,
-                    onSetFulfill = viewModel::setFulfillFilter,
-                    onSetTime = viewModel::setTimeFilter,
-                    onReset = viewModel::resetPurchaseFilter,
-                    onToggleFulfilled = viewModel::toggleFulfilled,
-                    compact = isCompact,
-                    modifier = Modifier.weight(1f),
-                )
-                ShopTab.LEDGER -> LedgerList(ledger, modifier = Modifier.weight(1f))
+            }
+
+            // 搜索只过滤当前 tab 的列表；空列表的默认空态文案在搜索场景下会误导（比如「货架空空如也」），
+            // 所以有搜索词且无结果时换成明确的「没搜到」提示。
+            val keyword = query.trim()
+            val searchedNothing = searchActive && keyword.isNotEmpty()
+            when (tab) {
+                ShopTab.PICKS -> {
+                    val searchedItems = ShopSearch.shelf(items, query)
+                    val matchedPicks = picks.mapNotNull { pick ->
+                        searchedItems.firstOrNull { it.id == pick.itemId }?.let { pick to it }
+                    }
+                    if (searchedNothing && matchedPicks.isEmpty()) {
+                        EmptyHint(
+                            text = "今日精选里没有与「$keyword」相关的商品",
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        DailyPicksWall(
+                            picks = matchedPicks,
+                            balance = balance,
+                            onBuy = { pick, item -> viewModel.purchase(item.id, pick.id) },
+                            compact = isCompact,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                ShopTab.SHELF -> {
+                    val matched = ShopSearch.shelf(items, query)
+                    if (searchedNothing && matched.isEmpty()) {
+                        EmptyHint(
+                            text = "货架上没有与「$keyword」相关的商品",
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        ShelfList(
+                            items = matched,
+                            balance = balance,
+                            onBuy = { viewModel.purchase(it.id) },
+                            onEdit = { editing = it },
+                            compact = isCompact,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                ShopTab.MINE -> {
+                    val matched = ShopSearch.purchases(purchases, query)
+                    if (searchedNothing && matched.isEmpty()) {
+                        EmptyHint(
+                            text = "兑换记录里没有与「$keyword」相关的奖励",
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        PurchaseList(
+                            purchases = matched,
+                            filter = purchaseFilter,
+                            onToggleRarity = viewModel::toggleRarityFilter,
+                            onSetFulfill = viewModel::setFulfillFilter,
+                            onSetTime = viewModel::setTimeFilter,
+                            onReset = viewModel::resetPurchaseFilter,
+                            onToggleFulfilled = viewModel::toggleFulfilled,
+                            compact = isCompact,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                ShopTab.LEDGER -> {
+                    val matched = ShopSearch.ledger(ledger, query) { it.type.label }
+                    if (searchedNothing && matched.isEmpty()) {
+                        EmptyHint(
+                            text = "流水里没有与「$keyword」相关的记录",
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        LedgerList(matched, modifier = Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
@@ -369,6 +484,51 @@ fun ShopScreen(viewModel: ShopViewModel = viewModel()) {
             onDismiss = { viewModel.dismissAiPrice() },
         )
     }
+}
+
+/** 头部余额 chip 旁的搜索开关：再点一次关闭并清空关键词。 */
+@Composable
+private fun ShopSearchToggle(
+    active: Boolean,
+    onToggle: () -> Unit,
+) {
+    IconButton(onClick = onToggle) {
+        CiFunctionIcon(
+            resourceId = R.drawable.ic_ci_search,
+            contentDescription = if (active) "关闭搜索" else "搜索",
+            modifier = Modifier.size(CiSizes.actionIcon),
+        )
+    }
+}
+
+/** 搜索输入行：回车触发搜索键、尾部一键关闭并清空。 */
+@Composable
+private fun ShopSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    hint: String,
+    onClose: () -> Unit,
+    focusRequester: FocusRequester,
+    modifier: Modifier = Modifier,
+) {
+    CiTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = hint,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        trailing = {
+            CiFunctionIcon(
+                resourceId = R.drawable.ic_ci_close,
+                contentDescription = "关闭搜索",
+                modifier = Modifier
+                    .size(CiSizes.fieldHeight)
+                    .clip(CiShapes.pill)
+                    .clickable(onClick = onClose)
+                    .padding(CiSpacing.sm),
+            )
+        },
+        modifier = modifier.focusRequester(focusRequester),
+    )
 }
 
 @Composable

@@ -86,5 +86,6 @@ private fun themedIconResource(@DrawableRes resourceId: Int, isDark: Boolean): I
     R.drawable.ic_ci_stop -> if (isDark) R.drawable.ic_ci_stop_dark else R.drawable.ic_ci_stop_light
     R.drawable.ic_ci_open -> if (isDark) R.drawable.ic_ci_open_dark else R.drawable.ic_ci_open_light
     R.drawable.ic_ci_dropdown -> if (isDark) R.drawable.ic_ci_dropdown_dark else R.drawable.ic_ci_dropdown_light
+    R.drawable.ic_ci_search -> if (isDark) R.drawable.ic_ci_search_dark else R.drawable.ic_ci_search_light
     else -> resourceId
 }
