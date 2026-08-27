@@ -61,7 +61,11 @@ object Scheduler {
         nowMinute: Int? = null,
         deadlineByQuestId: Map<Long, Long> = emptyMap(),
     ): RescheduleResult {
-        val (movable, fixed) = tasks.partition { it.isMovable() }
+        // 时长非法（endMinute <= startMinute）的脏数据不参与放置：
+        // movable 会被当成 0 分钟塞进任意空档产出非法区间落库，fixed 会让 Slot 构造直接抛异常。
+        // 与「塞不下不静默丢弃」同一口径：原样保留并计入 unplaced，交 UI 提示用户修正。
+        val (broken, validTasks) = tasks.partition { it.endMinute <= it.startMinute }
+        val (movable, fixed) = validTasks.partition { it.isMovable() }
 
         val occupied = buildList {
             fixed.forEach { add(Slot(it.startMinute, it.endMinute)) }
@@ -82,7 +86,7 @@ object Scheduler {
         )
 
         val placed = mutableListOf<TaskEntity>()
-        val unplaced = mutableListOf<TaskEntity>()
+        val unplaced = broken.toMutableList()
         for (task in ordered) {
             val duration = task.endMinute - task.startMinute
             // 原时间还空着就不动，制造最小扰动

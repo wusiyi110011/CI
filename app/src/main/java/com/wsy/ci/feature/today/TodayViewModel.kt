@@ -99,6 +99,10 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as CiApp).container
     private val db = container.db
 
+    // 以下三个流刻意用 Eagerly 而非全工程统一的 WhileSubscribed(5000)：
+    // init 块里有常驻收集器依赖 observedTasks / runningSession（清投影、清停止标记），
+    // todayEpochDay 则被 Eagerly 的 observedTasks 常驻订阅；换 WhileSubscribed 也会因
+    // 内部订阅而永不休眠，不如显式声明「本来就是常驻」。
     val todayEpochDay: StateFlow<Long> = currentEpochDayFlow()
         .stateIn(
             viewModelScope,
@@ -120,7 +124,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         observedTasks,
         _taskStopProjection,
         ::applyTaskStopProjection,
-    ).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val sessions: StateFlow<List<SessionEntity>> = todayEpochDay
         .flatMapLatest { today ->
@@ -184,7 +188,8 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
         .map { TimeFormat.millisToMinutes(it) }
 
     /** 最近一次结算结果，驱动入账提示与升级庆祝弹窗。 */
-    val lastSettlement = MutableStateFlow<Settlement?>(null)
+    private val _lastSettlement = MutableStateFlow<Settlement?>(null)
+    val lastSettlement: StateFlow<Settlement?> = _lastSettlement.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -244,7 +249,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
                     note = note,
                     stoppedAtMillis = stoppedAt,
                 )
-                lastSettlement.value = settlement
+                _lastSettlement.value = settlement
                 // 返回 null 也表示数据库已确认没有 open session，旧服务同样必须撤掉。
                 TimerService.stop(getApplication())
                 CiWidgetUpdater.updateAll(getApplication())
@@ -258,7 +263,7 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissSettlement() {
-        lastSettlement.value = null
+        _lastSettlement.value = null
     }
 
     fun saveTask(task: TaskEntity) {

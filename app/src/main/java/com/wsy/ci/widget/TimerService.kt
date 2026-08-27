@@ -49,9 +49,14 @@ class TimerService : Service() {
                 val taskId = intent.getLongExtra(EXTRA_TASK_ID, -1).takeIf { it >= 0 }
                 val questId = intent.getLongExtra(EXTRA_QUEST_ID, -1).takeIf { it >= 0 }
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: "专注中"
+                // startForegroundService 要求 5 秒内进入前台，必须先于异步写库同步调用，
+                // 否则数据库繁忙时会抛 ForegroundServiceDidNotStartException。
+                // 计时起点先用当前时间占位，写库完成后再用真实 startAt 校准 chronometer。
+                startForeground(NOTIFICATION_ID, buildNotification(title, System.currentTimeMillis()))
                 scope.launch {
                     val session = app().container.timerRepository.startSession(taskId, questId)
-                    startForeground(NOTIFICATION_ID, buildNotification(title, session.startAt))
+                    getSystemService(NotificationManager::class.java)
+                        .notify(NOTIFICATION_ID, buildNotification(title, session.startAt))
                     // 写库完成后再刷小组件，调用方不用各自处理「服务异步写库」的竞态
                     CiWidgetUpdater.updateAll(this@TimerService)
                 }
@@ -65,7 +70,9 @@ class TimerService : Service() {
             }
             else -> stopSelfCleanly()
         }
-        return START_STICKY
+        // 计时真源是数据库 open session（见类注释）；服务被杀后由用户操作（界面/widget/语音）
+        // 重新拉起即可，系统重启一个拿不到 intent 的空服务只会走 stopSelfCleanly，没有意义。
+        return START_NOT_STICKY
     }
 
     private fun app() = applicationContext as CiApp

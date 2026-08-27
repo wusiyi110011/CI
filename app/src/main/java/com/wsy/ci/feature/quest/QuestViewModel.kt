@@ -43,8 +43,9 @@ import com.wsy.ci.widget.TimerService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -87,12 +88,14 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 主线超限时保存被拒并给出提示。 */
-    val message = MutableStateFlow<String?>(null)
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
 
     // ---------- 任务线详情（章节 + 具体任务 + 立即开始） ----------
 
     /** 当前展开详情的任务线；null 表示没有打开详情。 */
-    val selectedQuestId = MutableStateFlow<Long?>(null)
+    private val _selectedQuestId = MutableStateFlow<Long?>(null)
+    val selectedQuestId: StateFlow<Long?> = _selectedQuestId.asStateFlow()
 
     /** 展开的任务线下的全部任务，按日期 + 起始时间排。 */
     val questTasks: StateFlow<List<TaskEntity>> = selectedQuestId
@@ -105,26 +108,27 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun openQuest(quest: QuestEntity) {
-        selectedQuestId.value = quest.id
+        _selectedQuestId.value = quest.id
     }
 
     fun closeQuest() {
-        selectedQuestId.value = null
+        _selectedQuestId.value = null
     }
 
     // ---------- 主线批量关联任务 ----------
 
-    val batchAssign = MutableStateFlow<BatchAssignState?>(null)
+    private val _batchAssign = MutableStateFlow<BatchAssignState?>(null)
+    val batchAssign: StateFlow<BatchAssignState?> = _batchAssign.asStateFlow()
 
     fun openBatchAssign(quest: QuestEntity) {
         if (quest.type != QuestType.MAIN || quest.status != QuestStatus.ACTIVE) return
         viewModelScope.launch {
-            batchAssign.value = BatchAssignState(quest, db.taskDao().unassigned())
+            _batchAssign.value = BatchAssignState(quest, db.taskDao().unassigned())
         }
     }
 
     fun closeBatchAssign() {
-        batchAssign.value = null
+        _batchAssign.value = null
     }
 
     fun assignTasksToMain(taskIds: Set<Long>) {
@@ -132,8 +136,8 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         if (taskIds.isEmpty()) return
         viewModelScope.launch {
             val attached = db.taskDao().attachUnassignedToQuest(taskIds.toList(), state.quest.id)
-            batchAssign.value = null
-            message.value = "已将 $attached 个任务关联到「${state.quest.title}」"
+            _batchAssign.value = null
+            _message.value = "已将 $attached 个任务关联到「${state.quest.title}」"
             CiWidgetUpdater.updateAll(getApplication())
         }
     }
@@ -159,7 +163,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             // 计时是全局单例，已有在跑就别往库里塞一个永远开不了工的打卡块
             if (db.sessionDao().openSession() != null) {
-                message.value = "已有进行中的专注，结束后才能开始新任务"
+                _message.value = "已有进行中的专注，结束后才能开始新任务"
                 return@launch
             }
             if (quest.type == QuestType.SIDE) {
@@ -206,7 +210,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                 val activeMains = db.questDao().activeByType(QuestType.MAIN)
                     .filter { it.id != quest.id }
                 if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
-                    message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
+                    _message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
                     return@launch
                 }
             }
@@ -218,7 +222,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val done = container.questRepository.complete(quest.id) ?: return@launch
             val interest = if (done.interestCi > 0) "，复利结算 +${done.interestCi} CI" else ""
-            message.value = "「${done.questTitle}」已完成 🎉$interest"
+            _message.value = "「${done.questTitle}」已完成 🎉$interest"
         }
     }
 
@@ -238,7 +242,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
             db.questDao().detachChildren(quest.id)
             db.questDao().delete(quest)
             closeQuest()
-            message.value = "已删除「${quest.title}」，它排出的时间块保留在日程里"
+            _message.value = "已删除「${quest.title}」，它排出的时间块保留在日程里"
             CiWidgetUpdater.updateAll(getApplication())
         }
     }
@@ -250,7 +254,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                 val activeMains = db.questDao().activeByType(QuestType.MAIN)
                     .filter { it.id != quest.id }
                 if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
-                    message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
+                    _message.value = "主线最多同时进行 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条吧"
                     return@launch
                 }
             }
@@ -263,7 +267,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val trimmed = name.trim()
             if (trimmed.isBlank()) {
-                message.value = "领域名不能为空"
+                _message.value = "领域名不能为空"
                 return@launch
             }
             val id = db.domainDao().insert(DomainEntity(name = trimmed))
@@ -277,9 +281,9 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
             val trimmedName = name.trim()
             val trimmedTitles = titles.map(String::trim)
             when {
-                trimmedName.isBlank() -> message.value = "领域名不能为空"
-                trimmedTitles.size != Economy.MAX_LEVEL -> message.value = "请填写恰好 ${Economy.MAX_LEVEL} 个头衔"
-                trimmedTitles.any { it.isBlank() } -> message.value = "头衔名称不能为空"
+                trimmedName.isBlank() -> _message.value = "领域名不能为空"
+                trimmedTitles.size != Economy.MAX_LEVEL -> _message.value = "请填写恰好 ${Economy.MAX_LEVEL} 个头衔"
+                trimmedTitles.any { it.isBlank() } -> _message.value = "头衔名称不能为空"
                 else -> {
                     val updated = domain.copy(
                         name = trimmedName,
@@ -296,23 +300,24 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteDomain(domain: DomainEntity) {
         viewModelScope.launch {
             db.domainDao().archiveWithDetach(domain.id)
-            message.value = "已删除领域「${domain.name}」，任务与专注记录仍保留"
+            _message.value = "已删除领域「${domain.name}」，任务与专注记录仍保留"
             CiWidgetUpdater.updateAll(getApplication())
         }
     }
 
     fun dismissMessage() {
-        message.value = null
+        _message.value = null
     }
 
     // ---------- AI 学习路线 ----------
 
-    val routeGen = MutableStateFlow<RouteGenState>(RouteGenState.Idle)
+    private val _routeGen = MutableStateFlow<RouteGenState>(RouteGenState.Idle)
+    val routeGen: StateFlow<RouteGenState> = _routeGen.asStateFlow()
 
     fun generateRoute(domainName: String, weeklyHours: Int, goal: String) {
         viewModelScope.launch {
-            routeGen.value = RouteGenState.Loading
-            routeGen.value = when (val r = container.llmService.generateRoute(domainName, weeklyHours, goal)) {
+            _routeGen.value = RouteGenState.Loading
+            _routeGen.value = when (val r = container.llmService.generateRoute(domainName, weeklyHours, goal)) {
                 is LlmParsed.Ok -> RouteGenState.Preview(r.value, weeklyHours)
                 is LlmParsed.Err -> RouteGenState.Error(r.message)
             }
@@ -324,8 +329,8 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val activeMains = db.questDao().activeByType(QuestType.MAIN)
             if (activeMains.size >= MAX_ACTIVE_MAIN_QUESTS) {
-                message.value = "主线已满 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条再生成"
-                routeGen.value = RouteGenState.Idle
+                _message.value = "主线已满 $MAX_ACTIVE_MAIN_QUESTS 条，先完成或归档一条再生成"
+                _routeGen.value = RouteGenState.Idle
                 return@launch
             }
             val existing = domains.value.firstOrNull { it.name == plan.domain }
@@ -348,13 +353,13 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
                     chaptersJson = Json.encodeToString(plan.chapters),
                 )
             )
-            message.value = "主线已创建：${plan.chapters.size} 个章节。去今日页安排第一块学习时间吧"
-            routeGen.value = RouteGenState.Idle
+            _message.value = "主线已创建：${plan.chapters.size} 个章节。去今日页安排第一块学习时间吧"
+            _routeGen.value = RouteGenState.Idle
         }
     }
 
     fun dismissRouteGen() {
-        routeGen.value = RouteGenState.Idle
+        _routeGen.value = RouteGenState.Idle
     }
 
     // ---------- JSON 导入（外部/AI 设计好的计划一键落库） ----------
@@ -363,26 +368,28 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     data class ImportPending(val file: CiImportFile, val preview: ImportPreview)
 
     /** 待确认的导入清单；null 表示还停在粘贴框。 */
-    val importPending = MutableStateFlow<ImportPending?>(null)
+    private val _importPending = MutableStateFlow<ImportPending?>(null)
+    val importPending: StateFlow<ImportPending?> = _importPending.asStateFlow()
 
     /** 返回给导入对话框的结果：null 表示尚未导入。 */
-    val importResult = MutableStateFlow<String?>(null)
+    private val _importResult = MutableStateFlow<String?>(null)
+    val importResult: StateFlow<String?> = _importResult.asStateFlow()
 
     /** 只校验、只出清单，一个字都不写库——落库要等 [confirmImport]。 */
     fun previewImport(text: String) {
         viewModelScope.launch {
             when (val parsed = CiImport.parse(text)) {
                 is ImportParseResult.Err -> {
-                    importResult.value = "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
+                    _importResult.value = "❌ 校验未通过：\n" + parsed.errors.joinToString("\n") { "· $it" }
                 }
                 is ImportParseResult.Ok -> {
                     val file = parsed.file
                     val mainLimitError = checkMainLimit(file)
                     if (mainLimitError != null) {
-                        importResult.value = mainLimitError
+                        _importResult.value = mainLimitError
                         return@launch
                     }
-                    importPending.value = ImportPending(
+                    _importPending.value = ImportPending(
                         file = file,
                         // 复用/引用的判定口径要和 applyImport 里一致，否则预览说得和实际做的不是一回事
                         preview = previewPlan(
@@ -401,13 +408,13 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmImport() {
         val pending = importPending.value ?: return
         viewModelScope.launch {
-            importResult.value = applyImport(pending.file)
-            importPending.value = null
+            _importResult.value = applyImport(pending.file)
+            _importPending.value = null
         }
     }
 
     fun cancelImportPreview() {
-        importPending.value = null
+        _importPending.value = null
     }
 
     /** 主线超出上限就没必要让用户过目清单了，直接拦在预览之前。 */
@@ -498,7 +505,7 @@ class QuestViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissImportResult() {
-        importResult.value = null
-        importPending.value = null
+        _importResult.value = null
+        _importPending.value = null
     }
 }

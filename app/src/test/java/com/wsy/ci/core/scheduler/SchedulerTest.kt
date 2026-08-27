@@ -133,6 +133,35 @@ class SchedulerTest {
     }
 
     @Test
+    fun `时长非法的movable任务进unplaced且不产出非法区间`() {
+        val tasks = listOf(
+            task(1, 10 * 60, 10 * 60), // 0 分钟
+            task(2, 11 * 60, 10 * 60), // end < start
+            task(3, 9 * 60, 10 * 60),
+        )
+        val result = Scheduler.reschedule(tasks, emptyList(), window)
+
+        assertEquals(setOf(1L, 2L), result.unplaced.map { it.id }.toSet())
+        // 脏任务原样保留，不会出现 endMinute <= startMinute 的新区间
+        assertEquals(10 * 60, result.tasks.first { it.id == 1L }.startMinute)
+        assertEquals(10 * 60, result.tasks.first { it.id == 1L }.endMinute)
+        assertTrue(result.tasks.all { it.id != 1L || it.endMinute >= it.startMinute })
+    }
+
+    @Test
+    fun `时长非法的fixed任务不炸Slot且不影响其他任务`() {
+        val tasks = listOf(
+            task(1, 12 * 60, 11 * 60, locked = true), // 锁定块脏数据，过去会让 Slot 构造抛异常
+            task(2, 9 * 60, 10 * 60),
+        )
+        val result = Scheduler.reschedule(tasks, emptyList(), window)
+
+        assertEquals(listOf(1L), result.unplaced.map { it.id })
+        assertEquals(9 * 60, result.tasks.first { it.id == 2L }.startMinute)
+        // 脏锁定块不占用时间：t2 原时间保持不动即可证明它没有参与 freeSlots 切割
+    }
+
+    @Test
     fun `movedFrom只报告被移动的任务`() {
         val original = listOf(task(1, 14 * 60, 16 * 60), task(2, 18 * 60, 19 * 60))
         val result = Scheduler.reschedule(original, listOf(Slot(14 * 60, 17 * 60)), window)
